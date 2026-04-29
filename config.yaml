@@ -1,0 +1,52 @@
+# Ubuntu Agent - Configuração
+# =============================================================================
+
+llm:
+  base_url: "http://localhost:11434/v1"  # Compatível com Ollama, LM Studio, vLLM
+  model: "qwen2.5-coder:3b"
+  api_key: "not-needed"                   # Alguns servidores locais exigem um valor
+  temperature: 0.1
+  timeout: 30
+
+ui:
+  hotkey: "super+space"
+  theme: "dark"
+  width: 700
+  max_log_height: 200
+  font_family: "JetBrains Mono"
+  font_size: 13
+  opacity: 0.95
+
+security:
+  require_confirmation_for:
+    - "sudo"
+    - "apt install"
+    - "apt remove"
+    - "rm"
+    - "systemctl"
+    - "chmod"
+    - "chown"
+  blocked_patterns:
+    - "rm\\s+-rf\\s+/"
+    - "rm\\s+-rf\\s+~"
+    - "mkfs\\."
+    - "dd\\s+if=.+of=/dev/"
+    - ":\\(\\)\\{\\s*:\\|:\\&\\s*\\};:"
+    - "curl\\s+.+\\|\\s*(ba)?sh"
+    - "wget\\s+.+\\|\\s*(ba)?sh"
+    - "chmod\\s+-R\\s+777"
+    - "chmod\\s+777\\s+/"
+    - ">\\s*/dev/sd"
+    - "/etc/fstab"
+    - "/boot/grub"
+  command_timeout: 60
+
+history:
+  max_context_messages: 5
+  db_path: "data/history.db"
+
+logging:
+  level: "DEBUG"  # DEBUG, INFO, WARNING, ERROR
+
+agent:
+  max_retries: 2  # Máximo de retentativas na auto-avaliação (0 = desabilitar)

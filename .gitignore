@@ -1,0 +1,29 @@
+# Arquivos Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes Virtuais
+.venv/
+venv/
+env/
+ENV/
+
+# Dados Locais e Logs
+data/*
+!data/.keep
+data/logs/*
+!data/logs/.keep
+data/history.db
+
+# Configurações e Senhas
+.env
+.secret
+secrets.json
+config.local.yaml
+
+# IDEs e OS
+.vscode/
+.idea/
+.DS_Store
+*.swp
