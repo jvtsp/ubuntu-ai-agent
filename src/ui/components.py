@@ -187,8 +187,8 @@ class LogArea(ctk.CTkFrame):
         self.textbox.pack(fill="both", expand=True, padx=8, pady=8)
 
         # Configurar tags para cores
-        self.textbox.tag_config("thought", foreground="#888888", font=ctk.CTkFont(family=font_family, size=font_size, slant="italic"))
-        self.textbox.tag_config("code", foreground="#e95420", font=ctk.CTkFont(family=font_family, size=font_size, weight="bold"))
+        self.textbox.tag_config("thought", foreground="#888888")
+        self.textbox.tag_config("code", foreground="#e95420")
         self.textbox.tag_config("system", foreground="#77216f")
         for status, color in self.STATUS_COLORS.items():
             self.textbox.tag_config(status, foreground=color)
