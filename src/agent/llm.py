@@ -120,6 +120,37 @@ class LLMClient:
                 ) from e
             raise
 
+    def stream(self, system_prompt: str, user_message: str):
+        """
+        Envia uma mensagem ao LLM e retorna um gerador de tokens de resposta.
+
+        Args:
+            system_prompt: Prompt de sistema com as instruções do agente.
+            user_message: Mensagem do usuário (input + contexto).
+
+        Yields:
+            Pedaços (chunks) da string gerada pelo LLM.
+        """
+        try:
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=user_message),
+            ]
+            for chunk in self._llm.stream(messages):
+                yield chunk.content
+
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "timeout" in error_msg or "timed out" in error_msg:
+                raise TimeoutError(
+                    f"LLM demorou mais de {self.timeout}s para responder durante streaming."
+                ) from e
+            if "connection" in error_msg or "connect" in error_msg:
+                raise ConnectionError(
+                    f"Não foi possível conectar ao LLM em {self.base_url}"
+                ) from e
+            raise
+
     def health_check(self) -> bool:
         """
         Verifica se o endpoint LLM está acessível.

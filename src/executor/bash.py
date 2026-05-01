@@ -8,6 +8,7 @@ e os executa via subprocess com captura de output e timeout.
 import re
 import subprocess
 import shlex
+import os
 from dataclasses import dataclass
 from typing import Optional
 from src.logger import get_logger
@@ -224,22 +225,61 @@ def execute_command(
     # Sanitizar paths XDG (corrige capitalização e usa variáveis de ambiente)
     command = _sanitize_paths(command)
 
+    import shutil
+    bwrap_path = shutil.which("bwrap")
+    is_graphical = _should_wrap_graphical(command)
+    has_sudo = "sudo" in command.lower()
+
+    # Verificar se AppArmor está bloqueando userns (padrão no Ubuntu 24.04)
+    apparmor_blocks_userns = False
+    if bwrap_path:
+        try:
+            with open("/proc/sys/kernel/apparmor_restrict_unprivileged_userns", "r") as f:
+                apparmor_blocks_userns = f.read().strip() == "1"
+        except Exception:
+            pass
+
     # Envolver aplicativos gráficos com nohup
-    if _should_wrap_graphical(command):
+    if is_graphical:
         command = f"nohup {command} > /dev/null 2>&1 &"
         log.debug("Comando envolvido com nohup para app gráfico.")
 
+    # Comando base usando bash
+    cmd_args = ["bash", "-c", command]
+
+    # Aplicar sandbox se bwrap disponível, não for app gráfico, não usar sudo e AppArmor permitir
+    if bwrap_path and not is_graphical and not has_sudo and not apparmor_blocks_userns:
+        log.info("Aplicando sandbox bwrap ao comando.")
+        home_dir = os.path.expanduser("~")
+        cmd_args = [
+            bwrap_path,
+            "--ro-bind", "/usr", "/usr",
+            "--ro-bind", "/bin", "/bin",
+            "--ro-bind", "/lib", "/lib",
+            "--ro-bind", "/etc", "/etc",
+            "--dev", "/dev",
+            "--proc", "/proc",
+            "--bind", "/tmp", "/tmp",
+            "--bind", home_dir, home_dir,
+            "--die-with-parent",
+            "--"
+        ] + cmd_args
+    elif bwrap_path and apparmor_blocks_userns and not is_graphical and not has_sudo:
+        log.debug("Bwrap skipado: bloqueado pelo AppArmor restritivo no Ubuntu 24.04.")
+    elif bwrap_path and has_sudo:
+        log.debug("Bwrap skipado: comando requer sudo.")
+
     # Diretório de trabalho padrão: home do usuário
-    import os
     cwd = working_dir or os.path.expanduser("~")
 
     # Injetar sudo password se necessário
     stdin_data = None
-    if vault and "sudo" in command.lower():
+    if vault and has_sudo:
         password = vault.get_sudo_password()
         if password:
             # Substituir sudo por sudo -S para forçar a leitura do stdin
-            command = re.sub(r'\bsudo\b', 'sudo -S', command, flags=re.IGNORECASE)
+            command_with_sudo_s = re.sub(r'\bsudo\b', 'sudo -S', command, flags=re.IGNORECASE)
+            cmd_args[-1] = command_with_sudo_s # Atualiza o script no comando bash -c
             stdin_data = password + "\n"
             log.info("Senha sudo injetada via vault.")
 
@@ -255,10 +295,9 @@ def execute_command(
     env["VIDEOS"] = _xdg_dir("VIDEOS")
 
     try:
-        # Usando bash -c com shell=False (mais seguro que shell=True do Python que passa por /bin/sh)
-        # Permite pipes e redirects do Bash nativo
+        # Usando a lista de argumentos construída (bwrap ou bash -c)
         result = subprocess.run(
-            ["bash", "-c", command],
+            cmd_args,
             capture_output=True,
             text=True,
             timeout=timeout,

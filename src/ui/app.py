@@ -408,7 +408,16 @@ class UbuntuAgentApp(ctk.CTk):
             user_input: Texto do usuário.
         """
         try:
-            result = self.agent.run(user_input)
+            # Prepara a primeira mensagem do streaming ou adiciona uma nova linha antes
+            self.after(0, lambda: self.log_area.add_message("🤖 Raciocínio LLM:\n", "info"))
+            
+            def on_token(token: str):
+                self.after(0, lambda t=token: self.log_area.append_text(t))
+                
+            result = self.agent.run(user_input, stream_callback=on_token)
+            # Adiciona uma quebra de linha ao final do streaming
+            self.after(0, lambda: self.log_area.append_text("\n"))
+            
             # Atualizar UI na thread principal
             self.after(0, self._handle_agent_result, result)
         except Exception as e:

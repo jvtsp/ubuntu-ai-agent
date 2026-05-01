@@ -204,6 +204,23 @@ class LogArea(ctk.CTkFrame):
         # Mostrar a área de log e ajustar altura
         self._update_visibility()
 
+    def append_text(self, text: str) -> None:
+        """
+        Adiciona texto contínuo à última mensagem da área de log (útil para streaming).
+
+        Args:
+            text: Texto a ser adicionado.
+        """
+        self.textbox.configure(state="normal")
+        
+        if not self._has_content:
+            self._has_content = True
+            
+        self.textbox.insert("end", text)
+        self.textbox.configure(state="disabled")
+        self.textbox.see("end")
+        self._update_visibility()
+
     def _update_visibility(self) -> None:
         """Atualiza a visibilidade e altura da área de log."""
         if self._has_content:

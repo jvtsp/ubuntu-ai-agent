@@ -183,9 +183,15 @@ def main() -> None:
 
     # Se --toggle, tentar enviar sinal para instância existente
     if args.toggle:
-        # Por enquanto, apenas inicia a aplicação normalmente
-        # Uma implementação futura poderia usar D-Bus ou arquivo PID
-        pass
+        try:
+            from src.system.dbus_service import send_toggle_signal
+            if send_toggle_signal():
+                log.info("Sinal enviado para instância principal via D-Bus.")
+                sys.exit(0)
+            else:
+                log.info("Instância principal não encontrada. Iniciando nova...")
+        except Exception as e:
+            log.warning(f"Erro ao enviar sinal D-Bus: {e}")
 
     # ─── Inicializar componentes ─────────────────────────────────────────────
 
@@ -223,6 +229,13 @@ def main() -> None:
 
     # Registrar atalho global
     setup_hotkey(app, config)
+    
+    # Iniciar D-Bus Service para Wayland Single Instance
+    try:
+        from src.system.dbus_service import start_dbus_service
+        start_dbus_service(lambda: app.after(0, app.toggle_window))
+    except Exception as e:
+        log.warning(f"Não foi possível iniciar o serviço D-Bus: {e}")
 
     # Adicionar ícone na bandeja do sistema (Tray Icon)
     try:

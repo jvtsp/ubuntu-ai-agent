@@ -212,7 +212,15 @@ class AgentGraph:
         full_message = "\n\n".join(message_parts)
 
         try:
-            response = self.llm.invoke(SYSTEM_PROMPT, full_message)
+            if hasattr(self, "_stream_callback") and self._stream_callback:
+                response_chunks = []
+                for chunk in self.llm.stream(SYSTEM_PROMPT, full_message):
+                    response_chunks.append(chunk)
+                    self._stream_callback(chunk)
+                response = "".join(response_chunks)
+            else:
+                response = self.llm.invoke(SYSTEM_PROMPT, full_message)
+                
             log.info("LLM respondeu com sucesso (%d chars).", len(response))
             log.debug("Resposta LLM: %s", response[:500])
             return {"llm_response": response, "llm_error": ""}
@@ -443,16 +451,18 @@ class AgentGraph:
 
     # ─── Interface Pública ───────────────────────────────────────────────────
 
-    def run(self, user_input: str) -> AgentState:
+    def run(self, user_input: str, stream_callback=None) -> AgentState:
         """
         Executa o grafo completo para um input do usuário.
 
         Args:
             user_input: Texto em linguagem natural do usuário.
+            stream_callback: Função chamada a cada token gerado pelo LLM.
 
         Returns:
             Estado final do grafo com resultados.
         """
+        self._stream_callback = stream_callback
         import time
         now = time.time()
         if now - self._last_request_time < self._min_request_interval:
