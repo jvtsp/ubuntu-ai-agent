@@ -9,7 +9,7 @@ Cobre:
 """
 
 import pytest
-from src.executor.safety import SecurityValidator, CommandCategory, SafetyResult
+from src.executor.safety import CommandCategory, SecurityValidator
 
 
 class TestReadOnlyClassification:

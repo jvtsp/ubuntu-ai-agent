@@ -5,11 +5,9 @@ Configura loggers com rotação de arquivos para diagnóstico e auditoria.
 Os logs são salvos em data/logs/ com rotação diária e retenção de 30 dias.
 """
 
-import os
 import logging
+import os
 from logging.handlers import TimedRotatingFileHandler
-from datetime import datetime
-
 
 # Diretório de logs (relativo à raiz do projeto)
 _ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

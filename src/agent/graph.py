@@ -6,16 +6,17 @@ receber_input → consultar_llm → extrair_comando → validar_seguranca →
 solicitar_confirmacao / bloquear_cmd / executar_comando → atualizar_ui
 """
 
-from typing import TypedDict, Optional, Literal
-from langgraph.graph import StateGraph, END
+from typing import Literal, TypedDict
 
-from src.agent.prompts import SYSTEM_PROMPT, EVALUATION_PROMPT, build_context_messages
+from langgraph.graph import END, StateGraph
+
 from src.agent.llm import LLMClient
-from src.executor.bash import extract_command, execute_command, ExtractionResult, ExecutionResult
-from src.executor.safety import SecurityValidator, CommandCategory, SafetyResult
+from src.agent.prompts import EVALUATION_PROMPT, SYSTEM_PROMPT, build_context_messages
+from src.executor.bash import ExecutionResult, ExtractionResult, execute_command, extract_command
+from src.executor.safety import CommandCategory, SafetyResult, SecurityValidator
+from src.logger import get_logger
 from src.storage.database import Database
 from src.system.context import collect_system_context, format_system_context
-from src.logger import get_logger
 
 log = get_logger("agent.graph")
 
@@ -220,7 +221,7 @@ class AgentGraph:
                 response = "".join(response_chunks)
             else:
                 response = self.llm.invoke(SYSTEM_PROMPT, full_message)
-                
+
             log.info("LLM respondeu com sucesso (%d chars).", len(response))
             log.debug("Resposta LLM: %s", response[:500])
             return {"llm_response": response, "llm_error": ""}
@@ -346,7 +347,7 @@ class AgentGraph:
         user_input = state.get("user_input", "")
         command = state.get("extracted_command", "")
         execution = state.get("execution_result")
-        
+
         # Se o comando deu timeout, não avaliar
         if execution and execution.timed_out:
             return {"is_complete": True}
@@ -503,7 +504,7 @@ class AgentGraph:
 
         while retry_count <= self.max_retries:
             command = state.get("extracted_command", "")
-            self._notify_step(f"▶ Executando comando..." if retry_count == 0 else f"🔄 Tentativa {retry_count + 1}: executando...")
+            self._notify_step("▶ Executando comando..." if retry_count == 0 else f"🔄 Tentativa {retry_count + 1}: executando...")
             log.info("Executando confirmado (tentativa %d): %s", retry_count + 1, command)
 
             result = execute_command(command, timeout=self.command_timeout, vault=self.vault)
@@ -563,7 +564,7 @@ class AgentGraph:
                         f"Gere um comando CORRIGIDO."
                     )
                     full_message = "\n\n".join(message_parts)
-                    
+
                     new_response = self.llm.invoke(SYSTEM_PROMPT, full_message)
                     new_extraction = extract_command(new_response)
                     if new_extraction.success:

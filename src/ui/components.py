@@ -5,8 +5,9 @@ Contém componentes da UI: campo de input com placeholder,
 área de log rolável, indicador de status e modal de confirmação.
 """
 
+from collections.abc import Callable
+
 import customtkinter as ctk
-from typing import Optional, Callable
 
 
 class InputField(ctk.CTkFrame):
@@ -16,7 +17,7 @@ class InputField(ctk.CTkFrame):
         self,
         master: ctk.CTkBaseClass,
         placeholder: str = "Digite um comando em português...",
-        on_submit: Optional[Callable[[str], None]] = None,
+        on_submit: Callable[[str], None] | None = None,
         font_family: str = "JetBrains Mono",
         font_size: int = 13,
         **kwargs,
@@ -40,15 +41,23 @@ class InputField(ctk.CTkFrame):
             self,
             placeholder_text=placeholder,
             font=ctk.CTkFont(family=font_family, size=font_size),
-            height=45,
-            corner_radius=12,
-            border_width=2,
-            border_color=("#4a4a5e", "#4a4a5e"),
-            fg_color=("#1e1e2e", "#1e1e2e"),
-            text_color=("#cdd6f4", "#cdd6f4"),
+            height=35,
+            corner_radius=0,
+            border_width=0,
+            fg_color="transparent",
+            text_color=("#f8f8f2", "#f8f8f2"),
             placeholder_text_color=("#6c7086", "#6c7086"),
         )
-        self.entry.pack(fill="x", padx=2, pady=2)
+
+        self.prompt_label = ctk.CTkLabel(
+            self,
+            text="user@agent:~$",
+            font=ctk.CTkFont(family=font_family, size=font_size, weight="bold"),
+            text_color=("#38b44a", "#38b44a"), # Ubuntu green
+        )
+
+        self.prompt_label.pack(side="left", padx=(10, 5), pady=2)
+        self.entry.pack(side="left", fill="x", expand=True, padx=2, pady=2)
         self.entry.bind("<Return>", self._handle_submit)
 
     def _handle_submit(self, event=None) -> None:
@@ -176,26 +185,36 @@ class LogArea(ctk.CTkFrame):
             activate_scrollbars=True,
         )
         self.textbox.pack(fill="both", expand=True, padx=8, pady=8)
+
+        # Configurar tags para cores
+        self.textbox.tag_config("thought", foreground="#888888", font=ctk.CTkFont(family=font_family, size=font_size, slant="italic"))
+        self.textbox.tag_config("code", foreground="#e95420", font=ctk.CTkFont(family=font_family, size=font_size, weight="bold"))
+        self.textbox.tag_config("system", foreground="#77216f")
+        for status, color in self.STATUS_COLORS.items():
+            self.textbox.tag_config(status, foreground=color)
+
         self.textbox.configure(state="disabled")
 
         # Começa oculto
         self.pack_forget()
         self._has_content = False
 
-    def add_message(self, message: str, status: str = "info") -> None:
+    def add_message(self, message: str, status: str = "info", tags: tuple = ()) -> None:
         """
         Adiciona uma mensagem à área de log.
 
         Args:
             message: Texto da mensagem.
             status: Tipo de status para coloração.
+            tags: Tags extras do Tkinter.
         """
         self.textbox.configure(state="normal")
 
         if self._has_content:
-            self.textbox.insert("end", "\n" + "─" * 60 + "\n")
+            self.textbox.insert("end", "\n" + "─" * 60 + "\n", ("system",))
 
-        self.textbox.insert("end", message + "\n")
+        all_tags = (status,) + tags
+        self.textbox.insert("end", message + "\n", all_tags)
         self._has_content = True
 
         self.textbox.configure(state="disabled")
@@ -204,19 +223,20 @@ class LogArea(ctk.CTkFrame):
         # Mostrar a área de log e ajustar altura
         self._update_visibility()
 
-    def append_text(self, text: str) -> None:
+    def append_text(self, text: str, tags: tuple = ()) -> None:
         """
         Adiciona texto contínuo à última mensagem da área de log (útil para streaming).
 
         Args:
             text: Texto a ser adicionado.
+            tags: Tags do Tkinter.
         """
         self.textbox.configure(state="normal")
-        
+
         if not self._has_content:
             self._has_content = True
-            
-        self.textbox.insert("end", text)
+
+        self.textbox.insert("end", text, tags)
         self.textbox.configure(state="disabled")
         self.textbox.see("end")
         self._update_visibility()
@@ -248,8 +268,8 @@ class ConfirmationModal(ctk.CTkToplevel):
         master: ctk.CTkBaseClass,
         command: str,
         reason: str = "",
-        on_confirm: Optional[Callable[[], None]] = None,
-        on_reject: Optional[Callable[[], None]] = None,
+        on_confirm: Callable[[], None] | None = None,
+        on_reject: Callable[[], None] | None = None,
         font_family: str = "JetBrains Mono",
         **kwargs,
     ) -> None:

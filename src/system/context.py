@@ -7,6 +7,7 @@ para que o LLM gere comandos precisos para esta máquina específica.
 
 import os
 import subprocess
+
 from src.logger import get_logger
 
 log = get_logger("system.context")
@@ -52,7 +53,7 @@ def collect_system_context() -> dict:
     ctx["locale"] = os.environ.get("LANG", "en_US.UTF-8")
     ctx["shell"] = os.environ.get("SHELL", "/bin/bash")
 
-    log.info("Contexto do sistema coletado: user=%s, desktop=%s, locale=%s", 
+    log.info("Contexto do sistema coletado: user=%s, desktop=%s, locale=%s",
              ctx["username"], ctx["desktop"], ctx["locale"])
 
     return ctx

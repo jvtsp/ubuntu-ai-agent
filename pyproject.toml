@@ -35,6 +35,7 @@ dependencies = [
     "pystray==0.19.5",
     "pillow==10.3.0",
     "dbus-next>=0.2.3",
+    "tiktoken>=0.7.0",
 ]
 
 [project.optional-dependencies]

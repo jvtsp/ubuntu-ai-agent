@@ -6,14 +6,13 @@ Implementa a janela flutuante (CustomTkinter) sem bordas, com campo de input,
 """
 
 import threading
-import customtkinter as ctk
-from typing import Optional
 
-from src.ui.components import InputField, StatusIndicator, LogArea, ConfirmationModal
+import customtkinter as ctk
+
 from src.agent.graph import AgentGraph, AgentState
 from src.agent.llm import LLMClient
-from src.executor.safety import CommandCategory
 from src.logger import get_logger
+from src.ui.components import ConfirmationModal, InputField, LogArea, StatusIndicator
 
 log = get_logger("ui.app")
 
@@ -35,7 +34,7 @@ class UbuntuAgentApp(ctk.CTk):
         self.agent = agent_graph
         self.llm = llm_client
         self.ui_config = config.get("ui", {})
-        self._pending_state: Optional[AgentState] = None
+        self._pending_state: AgentState | None = None
         self._is_visible = True
         self._modal_open = False
         self._is_processing = False
@@ -82,6 +81,10 @@ class UbuntuAgentApp(ctk.CTk):
 
         # ─── Bindings ────────────────────────────────────────────────────────
         self.bind("<Escape>", lambda e: self.iconify())  # Minimizar com Esc
+        self.bind("<Control-equal>", self._zoom_in)
+        self.bind("<Control-plus>", self._zoom_in)
+        self.bind("<Control-minus>", self._zoom_out)
+        self.bind("<Control-0>", self._zoom_reset)
 
         # ─── Health check inicial ────────────────────────────────────────────
         self.after(500, self._check_llm_status)
@@ -130,60 +133,93 @@ class UbuntuAgentApp(ctk.CTk):
         )
         clear_btn.pack(side="right", padx=(5, 0))
 
+        # Botão de configurações
+        settings_btn = ctk.CTkButton(
+            header,
+            text="⚙",
+            width=30,
+            height=25,
+            corner_radius=8,
+            fg_color="transparent",
+            hover_color=("#313244", "#313244"),
+            font=ctk.CTkFont(size=14),
+            command=self._open_settings,
+        )
+        settings_btn.pack(side="right", padx=(5, 0))
+
         self.status = StatusIndicator(header)
         self.status.pack(side="right")
 
-        # ─── Tabview ─────────────────────────────────────────────────────────
-        self.tabview = ctk.CTkTabview(
-            self.main_frame,
-            fg_color=("#1e1e2e", "#1e1e2e"),
-            segmented_button_fg_color=("#181825", "#181825"),
-            segmented_button_selected_color=("#89b4fa", "#89b4fa"),
-            segmented_button_selected_hover_color=("#74c7ec", "#74c7ec"),
-            segmented_button_unselected_color=("#313244", "#313244"),
-            segmented_button_unselected_hover_color=("#45475a", "#45475a"),
-            text_color=("#1e1e2e", "#1e1e2e"),
-            corner_radius=12,
-            height=0,
-        )
-        self.tabview.pack(fill="both", expand=True, padx=8, pady=(5, 8))
+        # ─── Área Principal do Terminal ──────────────────────────────────────
+        terminal_frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        terminal_frame.pack(fill="both", expand=True, padx=8, pady=(5, 8))
 
-        # ─── Aba Chat ────────────────────────────────────────────────────────
-        chat_tab = self.tabview.add("💬 Chat")
+        self.log_area = LogArea(
+            terminal_frame,
+            max_height=self.max_log_height,
+            font_family=self.font_family,
+            font_size=self.font_size,
+        )
+        self.log_area.pack(fill="both", expand=True, pady=(0, 5))
 
         self.input_field = InputField(
-            chat_tab,
+            terminal_frame,
             placeholder="Digite um comando em português...",
             on_submit=self._on_submit,
             font_family=self.font_family,
             font_size=self.font_size,
         )
-        self.input_field.pack(fill="x", padx=4, pady=(8, 5))
+        self.input_field.pack(fill="x", side="bottom")
 
-        self.log_area = LogArea(
-            chat_tab,
-            max_height=self.max_log_height,
-            font_family=self.font_family,
-            font_size=self.font_size - 1,
-        )
+        # Rodapé de info (Atalhos e Tokens)
+        footer = ctk.CTkFrame(terminal_frame, fg_color="transparent", height=20)
+        footer.pack(fill="x", side="bottom", pady=(2, 0))
 
         hint = ctk.CTkLabel(
-            chat_tab,
-            text="Enter ↵ enviar  •  Esc minimizar",
+            footer,
+            text="Zoom: Ctrl + / -  |  Enter ↵ enviar",
             font=ctk.CTkFont(size=10),
-            text_color=("#45475a", "#45475a"),
+            text_color=("#6c7086", "#6c7086"),
         )
-        hint.pack(pady=(0, 4))
+        hint.pack(side="left")
 
-        # ─── Aba Configurações ───────────────────────────────────────────────
-        settings_tab = self.tabview.add("⚙ Configurações")
-        self._build_settings_tab(settings_tab)
+        self.token_label = ctk.CTkLabel(
+            footer,
+            text="📊 Tokens: 0",
+            font=ctk.CTkFont(size=10),
+            text_color=("#6c7086", "#6c7086"),
+        )
+        self.token_label.pack(side="right")
 
-        # Selecionar aba Chat por padrão
-        self.tabview.set("💬 Chat")
+    def _open_settings(self) -> None:
+        """Abre uma janela modal com as configurações (substituindo a antiga aba)."""
+        settings_window = ctk.CTkToplevel(self)
+        settings_window.title("Configurações")
+        settings_window.geometry("450x300")
+        settings_window.resizable(False, False)
+        settings_window.transient(self)
+        settings_window.grab_set()
+
+        # Frame principal do settings
+        frame = ctk.CTkFrame(settings_window, fg_color="transparent")
+        frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        self._build_settings_tab(frame)
+
+    def _zoom_in(self, event=None):
+        current = ctk.ScalingTracker.get_widget_scaling()
+        ctk.set_widget_scaling(current + 0.1)
+
+    def _zoom_out(self, event=None):
+        current = ctk.ScalingTracker.get_widget_scaling()
+        if current > 0.5:
+            ctk.set_widget_scaling(current - 0.1)
+
+    def _zoom_reset(self, event=None):
+        ctk.set_widget_scaling(1.0)
 
     def _build_settings_tab(self, parent: ctk.CTkFrame) -> None:
-        """Constrói a aba de configurações."""
+        """Constrói o painel de configurações (agora no modal)."""
         # Seção: Endpoint
         endpoint_label = ctk.CTkLabel(
             parent,
@@ -366,7 +402,7 @@ class UbuntuAgentApp(ctk.CTk):
             old = self.llm.base_url
             self.llm.set_endpoint(new_url)
             self._settings_status.configure(
-                text=f"✓ Endpoint alterado. Recarregando modelos...",
+                text="✓ Endpoint alterado. Recarregando modelos...",
                 text_color=("#a6e3a1", "#a6e3a1"),
             )
             log.info("Endpoint trocado: %s → %s", old, new_url)
@@ -408,16 +444,39 @@ class UbuntuAgentApp(ctk.CTk):
             user_input: Texto do usuário.
         """
         try:
-            # Prepara a primeira mensagem do streaming ou adiciona uma nova linha antes
-            self.after(0, lambda: self.log_area.add_message("🤖 Raciocínio LLM:\n", "info"))
-            
+            # Prepara a primeira mensagem do streaming
+            self.after(0, lambda: self.log_area.add_message("🤖 Raciocínio LLM:\n", "system"))
+
+            # Conta tokens de entrada
+            in_tokens = self.llm.count_tokens(user_input)
+            self.after(0, lambda: self.token_label.configure(text=f"📊 Tokens: {in_tokens} In | ... Out"))
+
+            stream_state: dict[str, object] = {"in_code": False, "buffer": ""}
+
             def on_token(token: str):
-                self.after(0, lambda t=token: self.log_area.append_text(t))
-                
+                stream_state["buffer"] = str(stream_state["buffer"]) + token
+                buf = str(stream_state["buffer"])
+
+                # Detecção simples de bloco de código markdown
+                if not stream_state["in_code"] and "```" in buf:
+                    stream_state["in_code"] = True
+                    stream_state["buffer"] = ""
+                elif stream_state["in_code"] and "```" in buf:
+                    stream_state["in_code"] = False
+                    stream_state["buffer"] = ""
+
+                tag = "code" if stream_state["in_code"] else "thought"
+                self.after(0, lambda t=token, tg=tag: self.log_area.append_text(t, (tg,)))
+
             result = self.agent.run(user_input, stream_callback=on_token)
+
+            # Atualiza tokens totais
+            out_tokens = self.llm.count_tokens(result.get("llm_response", ""))
+            self.after(0, lambda: self.token_label.configure(text=f"📊 Tokens: {in_tokens} In | {out_tokens} Out"))
+
             # Adiciona uma quebra de linha ao final do streaming
             self.after(0, lambda: self.log_area.append_text("\n"))
-            
+
             # Atualizar UI na thread principal
             self.after(0, self._handle_agent_result, result)
         except Exception as e:

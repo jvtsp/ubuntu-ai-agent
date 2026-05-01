@@ -2,8 +2,6 @@
 Testes para o módulo de persistência (storage/database.py).
 """
 
-import pytest
-from src.storage.database import Database
 
 
 class TestDatabase:

@@ -5,10 +5,9 @@ Gerencia o banco de dados de histórico de comandos executados,
 fornecendo contexto conversacional para o LLM.
 """
 
-import sqlite3
 import os
+import sqlite3
 from datetime import datetime
-from typing import Optional
 
 
 class Database:
@@ -23,7 +22,7 @@ class Database:
                      Use ":memory:" para banco em memória (útil para testes).
         """
         self.db_path = db_path
-        self._persistent_conn: Optional[sqlite3.Connection] = None
+        self._persistent_conn: sqlite3.Connection | None = None
 
         # Para bancos em arquivo, garantir que o diretório existe
         if db_path != ":memory:":
@@ -64,11 +63,11 @@ class Database:
     def save_command(
         self,
         user_input: str,
-        llm_response: Optional[str] = None,
-        extracted_command: Optional[str] = None,
-        stdout: Optional[str] = None,
-        stderr: Optional[str] = None,
-        exit_code: Optional[int] = None,
+        llm_response: str | None = None,
+        extracted_command: str | None = None,
+        stdout: str | None = None,
+        stderr: str | None = None,
+        exit_code: int | None = None,
         confirmed: bool = False,
     ) -> int:
         """

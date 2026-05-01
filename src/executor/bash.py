@@ -5,12 +5,11 @@ Extrai comandos dos blocos de código markdown retornados pelo LLM
 e os executa via subprocess com captura de output e timeout.
 """
 
+import os
 import re
 import subprocess
-import shlex
-import os
 from dataclasses import dataclass
-from typing import Optional
+
 from src.logger import get_logger
 
 log = get_logger("executor.bash")
@@ -57,14 +56,14 @@ def _sanitize_paths(command: str) -> str:
         (re.compile(r'~/V[íi]deos\b', re.IGNORECASE), '"$VIDEOS"'),
         (re.compile(r'~/Videos\b'), '"$VIDEOS"'),
     ]
-    
+
     original = command
     for pattern, replacement in replacements:
         command = pattern.sub(replacement, command)
-    
+
     if command != original:
         log.debug("Path sanitizado: '%s' → '%s'", original[:100], command[:100])
-    
+
     return command
 
 
@@ -202,7 +201,7 @@ def _should_wrap_graphical(command: str) -> bool:
 def execute_command(
     command: str,
     timeout: int = 60,
-    working_dir: Optional[str] = None,
+    working_dir: str | None = None,
     vault = None,
 ) -> ExecutionResult:
     """
@@ -234,7 +233,7 @@ def execute_command(
     apparmor_blocks_userns = False
     if bwrap_path:
         try:
-            with open("/proc/sys/kernel/apparmor_restrict_unprivileged_userns", "r") as f:
+            with open("/proc/sys/kernel/apparmor_restrict_unprivileged_userns") as f:
                 apparmor_blocks_userns = f.read().strip() == "1"
         except Exception:
             pass

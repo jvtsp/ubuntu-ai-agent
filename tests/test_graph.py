@@ -3,9 +3,10 @@ Testes de integração para o grafo do agente (agent/graph.py).
 Usa LLM mockado para testar o fluxo completo sem dependência externa.
 """
 
-import pytest
 from unittest.mock import MagicMock, patch
-from src.agent.graph import AgentGraph, AgentState
+
+import pytest
+from src.agent.graph import AgentGraph
 from src.executor.safety import SecurityValidator
 from src.storage.database import Database
 

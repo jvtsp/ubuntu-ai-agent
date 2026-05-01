@@ -2,11 +2,14 @@
 Testes para o módulo de extração e execução (executor/bash.py).
 """
 
+from unittest.mock import MagicMock, patch
+
 import pytest
-from unittest.mock import patch, MagicMock
 from src.executor.bash import (
-    extract_command, _sanitize_paths, _should_wrap_graphical,
-    execute_command, ExtractionResult, ExecutionResult,
+    _sanitize_paths,
+    _should_wrap_graphical,
+    execute_command,
+    extract_command,
 )
 
 

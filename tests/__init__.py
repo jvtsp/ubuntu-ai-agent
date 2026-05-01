@@ -3,10 +3,11 @@ Fixtures compartilhadas para os testes do Ubuntu Agent.
 """
 
 import os
-import sys
-import pytest
 import sqlite3
+import sys
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 # Garantir que o diretório raiz do projeto está no path
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

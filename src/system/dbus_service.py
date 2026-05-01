@@ -7,8 +7,10 @@ Quando acionado via D-Bus, o método Toggle() alternará a visibilidade da inter
 
 import asyncio
 import threading
+
 from dbus_next.aio import MessageBus
 from dbus_next.service import ServiceInterface, method
+
 from src.logger import get_logger
 
 log = get_logger("system.dbus")
@@ -60,9 +62,9 @@ def send_toggle_signal() -> bool:
     Tenta enviar o sinal Toggle para uma instância existente via D-Bus.
     Retorna True se sucesso (instância já rodando), False caso contrário.
     """
-    from dbus_next.glib import MessageBus as GlibMessageBus
     from dbus_next import Message, MessageType
-    
+    from dbus_next.glib import MessageBus as GlibMessageBus
+
     # Para o cliente simples (cli script send), não precisamos asyncio
     # Usamos o MessageBus síncrono para enviar e aguardar
     try:

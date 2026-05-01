@@ -2,8 +2,7 @@
 Testes para o módulo de prompts (agent/prompts.py).
 """
 
-import pytest
-from src.agent.prompts import SYSTEM_PROMPT, EVALUATION_PROMPT, build_context_messages
+from src.agent.prompts import EVALUATION_PROMPT, SYSTEM_PROMPT, build_context_messages
 
 
 class TestSystemPrompt:

@@ -2,8 +2,8 @@
 Testes para o módulo de contexto do sistema (system/context.py).
 """
 
-import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
+
 from src.system.context import collect_system_context, format_system_context
 
 

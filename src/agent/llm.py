@@ -6,9 +6,13 @@ endpoint local compatível com a API OpenAI (Ollama, LM Studio, vLLM).
 """
 
 import requests
+import tiktoken
+from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
-from langchain_core.messages import SystemMessage, HumanMessage
 
+from src.logger import get_logger
+
+log = get_logger("agent.llm")
 
 class LLMClient:
     """Cliente para interação com o LLM local."""
@@ -171,3 +175,17 @@ class LLMClient:
             return resp.status_code < 500
         except requests.RequestException:
             return False
+
+    def count_tokens(self, text: str) -> int:
+        """
+        Calcula a quantidade aproximada de tokens em um texto.
+        Usa o cl100k_base (padrão OpenAI) como aproximação universal rápida.
+        """
+        if not text:
+            return 0
+        try:
+            encoding = tiktoken.get_encoding("cl100k_base")
+            return len(encoding.encode(text))
+        except Exception as e:
+            log.warning(f"Erro ao contar tokens: {e}")
+            return 0
