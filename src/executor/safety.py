@@ -105,8 +105,8 @@ class SecurityValidator:
         for keyword in self.confirmation_keywords:
             # Usar regex com limitadores de palavra para evitar falsos positivos
             # ex: 'rm' não deve dar match em 'gnome-terminal'
-            pattern = rf"\b{re.escape(keyword)}\b"
-            if re.search(pattern, command, re.IGNORECASE):
+            kw_pattern = rf"\b{re.escape(keyword)}\b"
+            if re.search(kw_pattern, command, re.IGNORECASE):
                 return SafetyResult(
                     category=CommandCategory.NEEDS_CONFIRMATION,
                     is_safe=True,

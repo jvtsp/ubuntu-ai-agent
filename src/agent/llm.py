@@ -9,6 +9,7 @@ import requests
 import tiktoken
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_openai import ChatOpenAI
+from pydantic import SecretStr
 
 from src.logger import get_logger
 
@@ -38,7 +39,7 @@ class LLMClient:
         return ChatOpenAI(
             base_url=self.base_url,
             model=self.model,
-            api_key=self.api_key,
+            api_key=SecretStr(self.api_key) if self.api_key else None,
             temperature=self.temperature,
             timeout=self.timeout,
             max_retries=1,

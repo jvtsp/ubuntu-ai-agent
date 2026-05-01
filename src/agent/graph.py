@@ -9,6 +9,7 @@ solicitar_confirmacao / bloquear_cmd / executar_comando → atualizar_ui
 from typing import Literal, TypedDict
 
 from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 from src.agent.llm import LLMClient
 from src.agent.prompts import EVALUATION_PROMPT, SYSTEM_PROMPT, build_context_messages
@@ -91,7 +92,7 @@ class AgentGraph:
 
         self.graph = self._build_graph()
 
-    def _build_graph(self) -> StateGraph:
+    def _build_graph(self) -> CompiledStateGraph:
         """Constrói o grafo LangGraph com todos os nós e edges."""
         graph = StateGraph(AgentState)
 
@@ -486,7 +487,8 @@ class AgentGraph:
         }
 
         result = self.graph.invoke(initial_state)
-        return result
+        from typing import cast
+        return cast(AgentState, result)
 
     def execute_confirmed(self, state: AgentState) -> AgentState:
         """

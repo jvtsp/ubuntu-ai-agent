@@ -36,7 +36,7 @@ class TestExtractCommand:
 
     def test_extract_empty(self):
         assert extract_command("").success is False
-        assert extract_command(None).success is False
+        assert extract_command(None).success is False  # type: ignore
         assert extract_command("   \n  ").success is False
 
     def test_extract_fallback(self):

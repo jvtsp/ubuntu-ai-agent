@@ -79,7 +79,7 @@ def send_toggle_signal() -> bool:
         )
         # Tenta enviar a mensagem. Se o serviço não existir, lança erro.
         reply = bus.call_sync(msg)
-        return reply.message_type != MessageType.ERROR
+        return bool(reply.message_type != MessageType.ERROR)
     except Exception:
         # Se ocorrer exceção (ex: nome não existe no bus), assumimos que o app não está rodando.
         return False
