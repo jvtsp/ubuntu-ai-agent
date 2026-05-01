@@ -16,7 +16,7 @@ log = get_logger("system.context")
 def _run_quiet(cmd: str, default: str = "") -> str:
     """Executa um comando e retorna a saída, ou default se falhar."""
     try:
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S602
             cmd, shell=True, capture_output=True, text=True, timeout=5
         )
         return result.stdout.strip() if result.returncode == 0 else default

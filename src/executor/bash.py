@@ -18,14 +18,13 @@ log = get_logger("executor.bash")
 def _xdg_dir(name: str) -> str:
     """Resolve um diretório XDG (DESKTOP, DOCUMENTS, etc.) via xdg-user-dir."""
     import os
-    try:
-        result = subprocess.run(
-            ["xdg-user-dir", name], capture_output=True, text=True, timeout=3
+    import contextlib
+    with contextlib.suppress(Exception):
+        result = subprocess.run(  # noqa: S603
+            ["xdg-user-dir", name], capture_output=True, text=True, timeout=3  # noqa: S607
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
-    except Exception:
-        pass
     return os.path.expanduser("~")
 
 
@@ -232,11 +231,10 @@ def execute_command(
     # Verificar se AppArmor está bloqueando userns (padrão no Ubuntu 24.04)
     apparmor_blocks_userns = False
     if bwrap_path:
-        try:
+        import contextlib
+        with contextlib.suppress(Exception):
             with open("/proc/sys/kernel/apparmor_restrict_unprivileged_userns") as f:
                 apparmor_blocks_userns = f.read().strip() == "1"
-        except Exception:
-            pass
 
     # Envolver aplicativos gráficos com nohup
     if is_graphical:
@@ -258,7 +256,7 @@ def execute_command(
             "--ro-bind", "/etc", "/etc",
             "--dev", "/dev",
             "--proc", "/proc",
-            "--bind", "/tmp", "/tmp",
+            "--bind", "/tmp", "/tmp",  # noqa: S108
             "--bind", home_dir, home_dir,
             "--die-with-parent",
             "--"
@@ -295,7 +293,7 @@ def execute_command(
 
     try:
         # Usando a lista de argumentos construída (bwrap ou bash -c)
-        result = subprocess.run(
+        result = subprocess.run(  # noqa: S603
             cmd_args,
             capture_output=True,
             text=True,
