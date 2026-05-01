@@ -8,6 +8,7 @@ Contém componentes da UI: campo de input com placeholder,
 from collections.abc import Callable
 
 import customtkinter as ctk
+import typing
 
 
 class InputField(ctk.CTkFrame):
@@ -19,7 +20,7 @@ class InputField(ctk.CTkFrame):
         placeholder: str = "Digite um comando em português...",
         on_submit: Callable[[str], None] | None = None,
         font_family: str = "JetBrains Mono",
-        font_size: int = 13,
+        font_size: int = 14,
         **kwargs,
     ) -> None:
         """
@@ -41,19 +42,17 @@ class InputField(ctk.CTkFrame):
             self,
             placeholder_text=placeholder,
             font=ctk.CTkFont(family=font_family, size=font_size),
-            height=35,
-            corner_radius=0,
-            border_width=0,
-            fg_color="transparent",
-            text_color=("#f8f8f2", "#f8f8f2"),
-            placeholder_text_color=("#6c7086", "#6c7086"),
+            height=45,
+            corner_radius=8,
+            border_width=1,
+            fg_color=("gray95", "gray15"),
         )
 
         self.prompt_label = ctk.CTkLabel(
             self,
             text="user@agent:~$",
             font=ctk.CTkFont(family=font_family, size=font_size, weight="bold"),
-            text_color=("#38b44a", "#38b44a"), # Ubuntu green
+            text_color=("#2ea043", "#3fb950"), # Ubuntu green adaptable
         )
 
         self.prompt_label.pack(side="left", padx=(10, 5), pady=2)
@@ -82,15 +81,15 @@ class InputField(ctk.CTkFrame):
 class StatusIndicator(ctk.CTkFrame):
     """Indicador de status com ponto colorido."""
 
-    # Cores para cada status
-    COLORS = {
-        "online": "#a6e3a1",     # Verde - LLM conectado
-        "processing": "#f9e2af",  # Amarelo - processando
-        "offline": "#f38ba8",     # Vermelho - LLM offline
-        "idle": "#6c7086",        # Cinza - inativo
+    # Cores para cada status adaptáveis ao tema (Light, Dark)
+    COLORS: typing.ClassVar[dict[str, tuple[str, str]]] = {
+        "online": ("#198754", "#2ea043"),     # Verde
+        "processing": ("#ffc107", "#e3b341"), # Amarelo
+        "offline": ("#dc3545", "#f85149"),    # Vermelho
+        "idle": ("gray50", "gray60"),         # Cinza
     }
 
-    LABELS = {
+    LABELS: typing.ClassVar[dict[str, str]] = {
         "online": "LLM Conectado",
         "processing": "Processando...",
         "offline": "LLM Offline",
@@ -117,7 +116,6 @@ class StatusIndicator(ctk.CTkFrame):
             self,
             text=self.LABELS["idle"],
             font=ctk.CTkFont(size=11),
-            text_color=("#6c7086", "#6c7086"),
         )
         self.label.pack(side="left")
 
@@ -138,20 +136,23 @@ class StatusIndicator(ctk.CTkFrame):
 class LogArea(ctk.CTkFrame):
     """Área de log rolável para exibir resultados."""
 
-    # Cores para tipos de mensagem
-    STATUS_COLORS = {
-        "success": "#a6e3a1",
-        "error": "#f38ba8",
-        "warning": "#f9e2af",
-        "blocked": "#f38ba8",
-        "pending": "#89b4fa",
-        "info": "#cdd6f4",
+    # Cores adaptáveis para tags do Tkinter
+    # No Text widget do Tkinter não podemos passar uma tupla ("light", "dark")
+    # Teria que atualizar no change do tema. Para simplificar e manter robusto,
+    # usamos cores que funcionam bem em fundos claros e escuros ou tons intermediários.
+    STATUS_COLORS: typing.ClassVar[dict[str, str]] = {
+        "success": "#2ea043",
+        "error": "#f85149",
+        "warning": "#d29922",
+        "blocked": "#f85149",
+        "pending": "#58a6ff",
+        "info": "#8b949e",
     }
 
     def __init__(
         self,
         master: ctk.CTkBaseClass,
-        max_height: int = 200,
+        max_height: int = 400,
         font_family: str = "JetBrains Mono",
         font_size: int = 12,
         **kwargs,
@@ -167,7 +168,7 @@ class LogArea(ctk.CTkFrame):
         """
         super().__init__(
             master,
-            fg_color=("#181825", "#181825"),
+            fg_color=("gray95", "gray15"),
             corner_radius=12,
             **kwargs,
         )
@@ -178,7 +179,6 @@ class LogArea(ctk.CTkFrame):
             self,
             font=ctk.CTkFont(family=font_family, size=font_size),
             fg_color="transparent",
-            text_color=("#cdd6f4", "#cdd6f4"),
             wrap="word",
             height=0,
             corner_radius=12,
@@ -213,7 +213,7 @@ class LogArea(ctk.CTkFrame):
         if self._has_content:
             self.textbox.insert("end", "\n" + "─" * 60 + "\n", ("system",))
 
-        all_tags = (status,) + tags
+        all_tags = (status, *tags)
         self.textbox.insert("end", message + "\n", all_tags)
         self._has_content = True
 
@@ -244,12 +244,7 @@ class LogArea(ctk.CTkFrame):
     def _update_visibility(self) -> None:
         """Atualiza a visibilidade e altura da área de log."""
         if self._has_content:
-            self.pack(fill="x", padx=12, pady=(0, 12))
-            # Calcula altura necessária
-            num_lines = int(self.textbox.index("end-1c").split(".")[0])
-            line_height = 18  # Altura aproximada por linha
-            needed_height = min(num_lines * line_height + 20, self.max_height)
-            self.textbox.configure(height=max(needed_height, 60))
+            self.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
     def clear(self) -> None:
         """Limpa toda a área de log."""
@@ -295,15 +290,12 @@ class ConfirmationModal(ctk.CTkToplevel):
         self.transient(master)
         self.attributes("-topmost", True)
 
-        # Configurar aparência
-        self.configure(fg_color=("#1e1e2e", "#1e1e2e"))
-
         # Título
         title_label = ctk.CTkLabel(
             self,
             text="⚠ Confirmação Necessária",
             font=ctk.CTkFont(family=font_family, size=16, weight="bold"),
-            text_color=("#f9e2af", "#f9e2af"),
+            text_color=("#d29922", "#e3b341"), # Amarelo/Laranja
         )
         title_label.pack(pady=(20, 10))
 
@@ -313,7 +305,6 @@ class ConfirmationModal(ctk.CTkToplevel):
                 self,
                 text=reason,
                 font=ctk.CTkFont(family=font_family, size=12),
-                text_color=("#a6adc8", "#a6adc8"),
                 wraplength=500,
             )
             reason_label.pack(pady=(0, 10))
@@ -321,7 +312,7 @@ class ConfirmationModal(ctk.CTkToplevel):
         # Comando
         cmd_frame = ctk.CTkFrame(
             self,
-            fg_color=("#11111b", "#11111b"),
+            fg_color=("gray90", "gray10"),
             corner_radius=10,
         )
         cmd_frame.pack(fill="x", padx=20, pady=10)
@@ -330,7 +321,7 @@ class ConfirmationModal(ctk.CTkToplevel):
             cmd_frame,
             text=f"$ {command}",
             font=ctk.CTkFont(family=font_family, size=13),
-            text_color=("#89b4fa", "#89b4fa"),
+            text_color=("#0550ae", "#58a6ff"), # Azul
             wraplength=490,
             justify="left",
         )
@@ -347,9 +338,9 @@ class ConfirmationModal(ctk.CTkToplevel):
             width=140,
             height=40,
             corner_radius=10,
-            fg_color=("#45475a", "#45475a"),
-            hover_color=("#585b70", "#585b70"),
-            text_color=("#cdd6f4", "#cdd6f4"),
+            fg_color=("gray70", "gray30"),
+            hover_color=("gray60", "gray40"),
+            text_color=("black", "white"),
             command=self._reject,
         )
         reject_btn.pack(side="left", padx=10)
@@ -361,9 +352,9 @@ class ConfirmationModal(ctk.CTkToplevel):
             width=140,
             height=40,
             corner_radius=10,
-            fg_color=("#a6e3a1", "#a6e3a1"),
-            hover_color=("#94e2d5", "#94e2d5"),
-            text_color=("#1e1e2e", "#1e1e2e"),
+            fg_color=("#198754", "#2ea043"),
+            hover_color=("#157347", "#2c974b"),
+            text_color="white",
             command=self._confirm,
         )
         confirm_btn.pack(side="left", padx=10)
@@ -398,3 +389,4 @@ class ConfirmationModal(ctk.CTkToplevel):
         self.destroy()
         if self.on_reject:
             self.on_reject()
+
