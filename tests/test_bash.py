@@ -131,8 +131,8 @@ class TestExecuteCommand:
         assert r.timed_out is True
 
     def test_working_dir(self):
-        r = execute_command("pwd", working_dir="/tmp")
-        assert r.exit_code == 0 and "/tmp" in r.stdout
+        r = execute_command("pwd", working_dir="/tmp")  # noqa: S108
+        assert r.exit_code == 0 and "/tmp" in r.stdout  # noqa: S108
 
     def test_xdg_env(self):
         r = execute_command('echo "$DESKTOP"')

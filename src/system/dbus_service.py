@@ -21,7 +21,7 @@ class UbuntuAgentInterface(ServiceInterface):
         self._toggle_callback = toggle_callback
 
     @method()
-    def Toggle(self):
+    def Toggle(self):  # noqa: N802
         """Método exposto no D-Bus para alternar a interface."""
         log.info("Sinal Toggle recebido via D-Bus.")
         if self._toggle_callback:
@@ -79,9 +79,7 @@ def send_toggle_signal() -> bool:
         )
         # Tenta enviar a mensagem. Se o serviço não existir, lança erro.
         reply = bus.call_sync(msg)
-        if reply.message_type == MessageType.ERROR:
-            return False
-        return True
+        return reply.message_type != MessageType.ERROR
     except Exception:
         # Se ocorrer exceção (ex: nome não existe no bus), assumimos que o app não está rodando.
         return False

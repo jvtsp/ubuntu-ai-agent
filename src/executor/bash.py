@@ -17,11 +17,11 @@ log = get_logger("executor.bash")
 
 def _xdg_dir(name: str) -> str:
     """Resolve um diretório XDG (DESKTOP, DOCUMENTS, etc.) via xdg-user-dir."""
-    import os
     import contextlib
+    import os
     with contextlib.suppress(Exception):
-        result = subprocess.run(  # noqa: S603
-            ["xdg-user-dir", name], capture_output=True, text=True, timeout=3  # noqa: S607
+        result = subprocess.run(
+            ["xdg-user-dir", name], capture_output=True, text=True, timeout=3
         )
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
@@ -232,9 +232,8 @@ def execute_command(
     apparmor_blocks_userns = False
     if bwrap_path:
         import contextlib
-        with contextlib.suppress(Exception):
-            with open("/proc/sys/kernel/apparmor_restrict_unprivileged_userns") as f:
-                apparmor_blocks_userns = f.read().strip() == "1"
+        with contextlib.suppress(Exception), open("/proc/sys/kernel/apparmor_restrict_unprivileged_userns") as f:
+            apparmor_blocks_userns = f.read().strip() == "1"
 
     # Envolver aplicativos gráficos com nohup
     if is_graphical:
@@ -259,8 +258,9 @@ def execute_command(
             "--bind", "/tmp", "/tmp",  # noqa: S108
             "--bind", home_dir, home_dir,
             "--die-with-parent",
-            "--"
-        ] + cmd_args
+            "--",
+            *cmd_args
+        ]
     elif bwrap_path and apparmor_blocks_userns and not is_graphical and not has_sudo:
         log.debug("Bwrap skipado: bloqueado pelo AppArmor restritivo no Ubuntu 24.04.")
     elif bwrap_path and has_sudo:
@@ -293,7 +293,7 @@ def execute_command(
 
     try:
         # Usando a lista de argumentos construída (bwrap ou bash -c)
-        result = subprocess.run(  # noqa: S603
+        result = subprocess.run(
             cmd_args,
             capture_output=True,
             text=True,

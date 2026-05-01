@@ -28,6 +28,7 @@ Requires-Dist: keyboard==0.13.5
 Requires-Dist: pystray==0.19.5
 Requires-Dist: pillow==10.3.0
 Requires-Dist: dbus-next>=0.2.3
+Requires-Dist: tiktoken>=0.7.0
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0; extra == "dev"
 Requires-Dist: pytest-cov>=5.0; extra == "dev"

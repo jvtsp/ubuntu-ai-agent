@@ -9,20 +9,21 @@ Uso:
     python main.py --toggle  # Alternar visibilidade (para integração com D-Bus/keybinding)
 """
 
-import os
-import sys
-import signal
 import argparse
+import os
+import signal
+import sys
 import threading
-import yaml
+
 import pystray
+import yaml
 from PIL import Image, ImageDraw
 
 # Adicionar diretório raiz ao path
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT_DIR)
 
-from src.logger import setup_logging, get_logger
+from src.logger import get_logger, setup_logging
 
 
 def load_config(config_path: str = "config.yaml") -> dict:
@@ -37,7 +38,7 @@ def load_config(config_path: str = "config.yaml") -> dict:
     """
     full_path = os.path.join(ROOT_DIR, config_path)
     try:
-        with open(full_path, "r", encoding="utf-8") as f:
+        with open(full_path, encoding="utf-8") as f:
             config = yaml.safe_load(f)
         return config or {}
     except FileNotFoundError:
@@ -138,7 +139,7 @@ def setup_tray(app) -> None:
     def on_activate(icon, item):
         # Chama a função na thread principal do Tkinter
         app.after(0, app.toggle_window)
-        
+
     def on_quit(icon, item):
         icon.stop()
         app.after(0, app.destroy)
@@ -147,9 +148,9 @@ def setup_tray(app) -> None:
         pystray.MenuItem("Mostrar/Ocultar", on_activate, default=True),
         pystray.MenuItem("Sair do Ubuntu Agent", on_quit)
     )
-    
+
     icon = pystray.Icon("UbuntuAgent", create_image(), "Ubuntu Agent", menu)
-    
+
     # Executar em thread separada para não bloquear a UI principal
     threading.Thread(target=icon.run, daemon=True).start()
     print("[INFO] Ícone da bandeja do sistema criado.")
@@ -229,7 +230,7 @@ def main() -> None:
 
     # Registrar atalho global
     setup_hotkey(app, config)
-    
+
     # Iniciar D-Bus Service para Wayland Single Instance
     try:
         from src.system.dbus_service import start_dbus_service

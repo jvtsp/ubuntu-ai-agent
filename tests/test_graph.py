@@ -100,7 +100,7 @@ class TestAgentGraphSelfHealing:
             '```bash\necho "tentativa 1"\n```',
             '```bash\necho "tentativa 2"\n```',
         ]
-        agent.llm.invoke.side_effect = responses + ["SATISFATORIO"]
+        agent.llm.invoke.side_effect = [*responses, "SATISFATORIO"]
         with patch("src.agent.graph.execute_command") as mock_exec:
             mock_exec.return_value = MagicMock(
                 stdout="tentativa 1\n", stderr="", exit_code=0, timed_out=False

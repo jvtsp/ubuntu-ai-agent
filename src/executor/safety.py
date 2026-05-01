@@ -55,12 +55,10 @@ class SecurityValidator:
         """
         raw_patterns = config.get("blocked_patterns", [])
         self.blocked_patterns: list[re.Pattern] = []
+        import contextlib
         for pattern in raw_patterns:
-            try:
+            with contextlib.suppress(re.error):
                 self.blocked_patterns.append(re.compile(pattern, re.IGNORECASE))
-            except re.error:
-                # Padrão regex inválido, ignora silenciosamente
-                pass
 
         self.confirmation_keywords: list[str] = config.get(
             "require_confirmation_for", []

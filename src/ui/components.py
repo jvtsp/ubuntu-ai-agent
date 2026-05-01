@@ -5,10 +5,10 @@ Contém componentes da UI: campo de input com placeholder,
 área de log rolável, indicador de status e modal de confirmação.
 """
 
+import typing
 from collections.abc import Callable
 
 import customtkinter as ctk
-import typing
 
 
 class InputField(ctk.CTkFrame):
