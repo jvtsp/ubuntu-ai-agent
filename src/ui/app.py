@@ -198,20 +198,22 @@ class UbuntuAgentApp(ctk.CTk):
         settings_window.geometry("450x300")
         settings_window.resizable(False, False)
         settings_window.transient(self)
-        settings_window.grab_set()
 
         # Frame principal do settings
         frame = ctk.CTkFrame(settings_window, fg_color="transparent")
         frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         self._build_settings_tab(frame)
+        
+        settings_window.wait_visibility()
+        settings_window.grab_set()
 
     def _zoom_in(self, event=None):
-        current = ctk.ScalingTracker.get_widget_scaling()
+        current = ctk.ScalingTracker.get_widget_scaling(self)
         ctk.set_widget_scaling(current + 0.1)
 
     def _zoom_out(self, event=None):
-        current = ctk.ScalingTracker.get_widget_scaling()
+        current = ctk.ScalingTracker.get_widget_scaling(self)
         if current > 0.5:
             ctk.set_widget_scaling(current - 0.1)
 
