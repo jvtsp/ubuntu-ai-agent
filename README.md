@@ -18,7 +18,11 @@ Toda a inteligência roda **100% localmente** através do [Ollama](https://ollam
   - Blocklist nativa impede comandos destrutivos perigosos (ex: `rm -rf /`, `chmod -R 777`).
 - **Contexto e Memória:** O agente lembra dos últimos comandos enviados na mesma sessão (via banco de dados SQLite embutido).
 - **Sem Interrupções:** Executa aplicativos gráficos com `nohup` em background para não travar o processo principal.
-- **UI Natively Integrated:** Interface escura com abas, inspirada no design moderno do Linux, com gerenciamento dinâmico de modelos do Ollama.
+- **UI Dinâmica e Responsiva:**
+  - **Modo Spotlight:** O agente inicia em um formato minimalista (apenas uma barra de busca), focado na entrada do comando inicial.
+  - **Expansão Inteligente:** Após o primeiro uso, a interface se expande suavemente no estilo Web-Chat, revelando logs, configurações e o andamento do LLM.
+  - **Temas Nativos:** Adapta-se automaticamente ao tema do sistema (Claro/Escuro) utilizando suporte nativo do CustomTkinter, com opção de ajuste manual.
+  - **Responsividade:** Layout centralizado e confortável, ideal para uso minimizado ou em tela cheia.
 
 ---
 
