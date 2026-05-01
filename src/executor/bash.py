@@ -255,9 +255,10 @@ def execute_command(
     env["VIDEOS"] = _xdg_dir("VIDEOS")
 
     try:
+        # Usando bash -c com shell=False (mais seguro que shell=True do Python que passa por /bin/sh)
+        # Permite pipes e redirects do Bash nativo
         result = subprocess.run(
-            command,
-            shell=True,
+            ["bash", "-c", command],
             capture_output=True,
             text=True,
             timeout=timeout,

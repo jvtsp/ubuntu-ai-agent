@@ -79,6 +79,10 @@ class AgentGraph:
         self.max_retries = config.get("agent", {}).get("max_retries", 2)
         self._step_callback = None  # Callback para UI acompanhar nós
 
+        # Rate limiting
+        self._last_request_time = 0.0
+        self._min_request_interval = config.get("agent", {}).get("min_request_interval", 2.0)
+
         # Coletar contexto do sistema uma vez
         self._system_ctx = collect_system_context()
         self._system_ctx_str = format_system_context(self._system_ctx)
@@ -449,6 +453,17 @@ class AgentGraph:
         Returns:
             Estado final do grafo com resultados.
         """
+        import time
+        now = time.time()
+        if now - self._last_request_time < self._min_request_interval:
+            return {
+                "user_input": user_input,
+                "ui_message": "⏳ Aguarde um momento antes de enviar outro comando (Rate Limit).",
+                "ui_status": "warning",
+                "is_complete": True,
+            }
+        self._last_request_time = now
+
         initial_state: AgentState = {
             "user_input": user_input,
             "needs_confirmation": False,

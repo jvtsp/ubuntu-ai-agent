@@ -20,10 +20,19 @@ class Database:
 
         Args:
             db_path: Caminho relativo ou absoluto para o arquivo SQLite.
+                     Use ":memory:" para banco em memória (útil para testes).
         """
-        # Garante que o diretório existe
-        os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else "data", exist_ok=True)
         self.db_path = db_path
+        self._persistent_conn: Optional[sqlite3.Connection] = None
+
+        # Para bancos em arquivo, garantir que o diretório existe
+        if db_path != ":memory:":
+            os.makedirs(os.path.dirname(db_path) if os.path.dirname(db_path) else "data", exist_ok=True)
+        else:
+            # Para :memory:, manter uma conexão persistente (cada connect() cria um DB novo)
+            self._persistent_conn = sqlite3.connect(":memory:")
+            self._persistent_conn.row_factory = sqlite3.Row
+
         self._init_db()
 
     def _init_db(self) -> None:
@@ -45,7 +54,9 @@ class Database:
             conn.commit()
 
     def _connect(self) -> sqlite3.Connection:
-        """Cria uma nova conexão com o banco."""
+        """Retorna uma conexão com o banco."""
+        if self._persistent_conn is not None:
+            return self._persistent_conn
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn

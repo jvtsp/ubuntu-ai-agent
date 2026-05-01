@@ -14,3 +14,19 @@ class Vault:
     def set_sudo_password(self, password: str) -> None:
         self._sudo_password = password
 
+    def clear(self) -> None:
+        """Limpa a senha da memória de forma segura."""
+        import ctypes
+        
+        # Sobrescrever a string em memória se possível
+        if self._sudo_password:
+            # Em Python strings são imutáveis, mas podemos tentar
+            # dar uma dica para o garbage collector ou usar ctypes
+            # para zerar o buffer (best effort).
+            try:
+                buffer_size = len(self._sudo_password) * 2  # utf-16/utf-8 var size
+                ctypes.memset(id(self._sudo_password) + 24, 0, buffer_size)
+            except Exception:
+                pass
+            
+        self._sudo_password = ""

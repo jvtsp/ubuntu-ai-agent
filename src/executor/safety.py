@@ -86,6 +86,15 @@ class SecurityValidator:
                     matched_pattern=pattern.pattern,
                 )
 
+        # 1.5 Verificar evasões com subshells ou backticks
+        if "`" in command or "$(" in command:
+            return SafetyResult(
+                category=CommandCategory.BLOCKED,
+                is_safe=False,
+                reason="Uso de subshells ou backticks bloqueado para evitar evasões de segurança.",
+                matched_pattern="subshell_or_backtick",
+            )
+
         # 2. Verificar se é read-only
         if self._is_read_only(command):
             return SafetyResult(
