@@ -11,7 +11,7 @@ Toda a inteligência roda **100% localmente** através do [Ollama](https://ollam
 ## ✨ Principais Funcionalidades
 
 - **Tradução de Linguagem Natural para Bash:** Peça o que você quer fazer e o LLM gera o comando adequado usando variáveis de ambiente corretas (suporta multi-idioma e mapeamento de diretórios do sistema).
-- **Auto-Correção e Avaliação (Self-Healing):** Se um comando falhar, o agente lê a saída de erro (`stderr`) e pede ao LLM para corrigir e tentar novamente de forma autônoma.
+- **Auto-Correção e Avaliação (Self-Healing):** Se um comando bash ou ferramenta nativa falhar (ex: falta de dependência ou erro de execução), o agente detecta a falha e pede ao LLM para corrigir e tentar uma alternativa de forma autônoma.
 - **Camada de Segurança Rígida:**
   - Comandos *read-only* (como `ls`, `cat`, `df`) rodam direto.
   - Comandos de mutação (como `apt install`, `rm`, `chmod`) exigem **confirmação explícita do usuário** em um modal seguro.
@@ -40,8 +40,8 @@ O projeto utiliza **LangGraph** para criar um fluxo de execução determinístic
 5. **LLM Router:** O modelo gera um bloco Markdown `tool` para ações nativas ou `bash` como fallback.
 6. **Native Tools:** Tools D-Bus executam leituras e ações nativas com degradação controlada quando o serviço alvo não responde.
 7. **Safety Validator:** Regex e análise estática classificam comandos Bash como `READ_ONLY`, `NEEDS_CONFIRMATION` ou `BLOCKED`.
-8. **Executor:** Roda subprocessos de forma isolada, capturando `stdout` e `stderr`.
-9. **Evaluation Node:** Um segundo prompt avalia o `exit_code` e a saída. Se o resultado não satisfizer o objetivo inicial, o grafo faz um *loop* (máximo 2 vezes) com feedback do erro para o LLM gerar uma correção.
+8. **Executor:** Roda subprocessos de forma isolada, capturando `stdout` e `stderr`, com tratamento inteligente de timeout para comandos `sudo` sem senha.
+9. **Evaluation Node:** Um segundo prompt avalia o `exit_code` e a saída. Se o resultado não satisfizer o objetivo inicial ou uma ferramenta falhar, o grafo faz um *loop* (máximo 2 vezes) com feedback do erro para o LLM gerar uma correção (como um fallback em Bash).
 
 ---
 
@@ -107,8 +107,9 @@ Com o aplicativo rodando em segundo plano:
 
 ---
 
-## 🔒 Permissões e Sudo
-Se você enviar comandos que necessitam de `sudo`, o agente abrirá um cofre seguro na própria UI para solicitar sua senha apenas em memória durante a execução do comando.
+## 🔒 Permissões e Segurança
+- **Sudo:** Se você enviar comandos que necessitam de `sudo`, o agente abrirá um cofre seguro na própria UI para solicitar sua senha apenas em memória durante a execução do comando.
+- **Full Access (Modo Inseguro):** Caso habilitado na interface, desativa todas as confirmações de segurança do LangGraph, executando comandos e ferramentas de mutação de forma 100% autônoma (útil para automação total ou usuários avançados). Falhas neste modo engatilham as mesmas rotinas de auto-recuperação (Self-Healing).
 
 ---
 

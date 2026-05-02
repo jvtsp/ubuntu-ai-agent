@@ -122,4 +122,6 @@ def system_context():
         "arch": "x86_64",
         "locale": "pt_BR.UTF-8",
         "shell": "/bin/bash",
+        "terminal_emulators": ["gnome-terminal", "x-terminal-emulator"],
+        "terminal_command": "gnome-terminal",
     }

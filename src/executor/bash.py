@@ -7,7 +7,10 @@ e os executa via subprocess com captura de output e timeout.
 
 import os
 import re
+import shlex
 import subprocess
+import tempfile
+import time
 from dataclasses import dataclass
 
 from src.logger import get_logger
@@ -106,6 +109,14 @@ GRAPHICAL_APPS = {
     "mpv",
     "xdg-open",
     "gnome-terminal",
+    "x-terminal-emulator",
+    "kgx",
+    "konsole",
+    "xfce4-terminal",
+    "terminator",
+    "alacritty",
+    "kitty",
+    "xterm",
     "gnome-calculator",
     "gnome-system-monitor",
     "gnome-disks",
@@ -126,6 +137,8 @@ GRAPHICAL_APPS = {
     "kate",
     "okular",
 }
+
+GRAPHICAL_STARTUP_GRACE_SECONDS = 2.0
 
 
 @dataclass
@@ -171,7 +184,7 @@ def extract_command(llm_response: str) -> ExtractionResult:
     # 1. Tentar extrair de bloco ```bash```
     matches = BASH_BLOCK_PATTERN.findall(llm_response)
     if matches:
-        command = matches[0].strip()
+        command = _normalize_extracted_command(matches[0].strip())
 
         # Verificar se é uma resposta de erro do LLM
         if command.startswith("# ERRO:"):
@@ -198,27 +211,38 @@ def extract_command(llm_response: str) -> ExtractionResult:
     )
 
 
+def _normalize_extracted_command(command: str) -> str:
+    """Remove wrappers acidentais que fariam o comando virar interativo."""
+    lines = [line for line in command.splitlines() if line.strip()]
+    if len(lines) > 1 and lines[0].strip() in {"bash", "sh", "/bin/bash", "/bin/sh"}:
+        return "\n".join(lines[1:]).strip()
+    return command
+
+
 def _should_wrap_graphical(command: str) -> bool:
     """
-    Verifica se o comando inicia um aplicativo gráfico que deve ser
-    envolvido com nohup para não bloquear o terminal.
+    Verifica se o comando inicia um aplicativo gráfico que deve rodar
+    pelo fluxo de background com validação de inicialização.
 
     Args:
         command: Comando Bash.
 
     Returns:
-        True se o comando deve ser envolvido com nohup.
+        True se o comando deve usar o executor de aplicativos gráficos.
     """
-    # Se já tem nohup, não precisa envolver
-    if "nohup" in command:
-        return False
-
     # Pega o primeiro token (pode ter sudo antes)
-    tokens = command.strip().split()
+    try:
+        tokens = shlex.split(command.strip())
+    except ValueError:
+        tokens = command.strip().split()
     if not tokens:
         return False
 
     base_cmd = tokens[0]
+    if base_cmd == "nohup":
+        return False
+    if base_cmd == "env" and len(tokens) > 1:
+        base_cmd = tokens[1]
     if base_cmd == "sudo" and len(tokens) > 1:
         base_cmd = tokens[1]
 
@@ -228,11 +252,130 @@ def _should_wrap_graphical(command: str) -> bool:
     return base_cmd in GRAPHICAL_APPS
 
 
+def _build_execution_env() -> dict[str, str]:
+    """Prepara variáveis de ambiente necessárias para Bash e apps gráficos."""
+    env = os.environ.copy()
+    env["DESKTOP"] = _xdg_dir("DESKTOP")
+    env["DOCUMENTS"] = _xdg_dir("DOCUMENTS")
+    env["DOWNLOADS"] = _xdg_dir("DOWNLOAD")
+    env["MUSIC"] = _xdg_dir("MUSIC")
+    env["PICTURES"] = _xdg_dir("PICTURES")
+    env["VIDEOS"] = _xdg_dir("VIDEOS")
+    return env
+
+
+def _sanitize_graphical_env(env: dict[str, str]) -> dict[str, str]:
+    """Remove variáveis de sandboxes Snap que quebram apps gráficos do host."""
+    clean_env = env.copy()
+
+    snap_real_home = clean_env.get("SNAP_REAL_HOME")
+    if snap_real_home:
+        clean_env["HOME"] = snap_real_home
+
+    for key in list(clean_env):
+        if key.startswith("SNAP"):
+            clean_env.pop(key, None)
+
+    for key in (
+        "LD_LIBRARY_PATH",
+        "LD_PRELOAD",
+        "PYTHONHOME",
+        "PYTHONPATH",
+        "GTK_EXE_PREFIX",
+        "GTK_PATH",
+        "GIO_MODULE_DIR",
+        "GTK_IM_MODULE_FILE",
+    ):
+        clean_env.pop(key, None)
+
+    if clean_env.get("XDG_CONFIG_DIRS_VSCODE_SNAP_ORIG"):
+        clean_env["XDG_CONFIG_DIRS"] = clean_env["XDG_CONFIG_DIRS_VSCODE_SNAP_ORIG"]
+    if clean_env.get("XDG_DATA_DIRS_VSCODE_SNAP_ORIG"):
+        clean_env["XDG_DATA_DIRS"] = clean_env["XDG_DATA_DIRS_VSCODE_SNAP_ORIG"]
+
+    for key in ("XDG_DATA_HOME", "XDG_CONFIG_HOME", "XDG_CACHE_HOME"):
+        value = clean_env.get(key, "")
+        if "/snap/" in value or "/snap/" in value.replace("\\", "/"):
+            clean_env.pop(key, None)
+
+    return clean_env
+
+
+def _has_graphical_session(env: dict[str, str]) -> bool:
+    """Retorna True quando há uma sessão gráfica disponível para abrir janelas."""
+    return bool(env.get("DISPLAY") or env.get("WAYLAND_DISPLAY"))
+
+
+def _execute_graphical_command(command: str, cwd: str, env: dict[str, str]) -> ExecutionResult:
+    """
+    Inicia um app gráfico sem bloquear a UI e verifica falhas imediatas.
+
+    O wrapper antigo com nohup escondia stderr e fazia o shell retornar sucesso
+    mesmo quando o executável não existia. Aqui aguardamos uma janela curta:
+    se o processo morrer com erro, reportamos a falha; se continuar vivo, a UI
+    pode seguir sem ficar presa ao aplicativo.
+    """
+    if not _has_graphical_session(env):
+        return ExecutionResult(
+            exit_code=-1,
+            error_message="Nenhuma sessão gráfica encontrada.",
+            stderr=(
+                "Não encontrei DISPLAY ou WAYLAND_DISPLAY no ambiente. "
+                "Esse comando precisa ser executado dentro da sessão gráfica do usuário."
+            ),
+        )
+
+    env = _sanitize_graphical_env(env)
+
+    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stdout_file, tempfile.TemporaryFile(
+        mode="w+", encoding="utf-8"
+    ) as stderr_file:
+        try:
+            process = subprocess.Popen(
+                ["bash", "-lc", f"exec {command}"],
+                cwd=cwd,
+                env=env,
+                stdout=stdout_file,
+                stderr=stderr_file,
+                text=True,
+                start_new_session=True,
+            )
+        except OSError as e:
+            log.exception("Erro de OS ao iniciar app gráfico: %s", command[:100])
+            return ExecutionResult(
+                exit_code=-1,
+                error_message=f"Erro ao iniciar aplicativo gráfico: {e}",
+                stderr=str(e),
+            )
+
+        deadline = time.monotonic() + GRAPHICAL_STARTUP_GRACE_SECONDS
+        while time.monotonic() < deadline:
+            return_code = process.poll()
+            if return_code is not None:
+                stdout_file.flush()
+                stderr_file.flush()
+                stdout_file.seek(0)
+                stderr_file.seek(0)
+                return ExecutionResult(
+                    stdout=stdout_file.read(),
+                    stderr=stderr_file.read(),
+                    exit_code=return_code,
+                )
+            time.sleep(0.05)
+
+    return ExecutionResult(
+        stdout="Aplicativo gráfico iniciado em background.",
+        stderr="",
+        exit_code=0,
+    )
+
+
 def execute_command(
     command: str,
     timeout: int = 60,
     working_dir: str | None = None,
     vault=None,
+    allow_unsafe: bool = False,
 ) -> ExecutionResult:
     """
     Executa um comando Bash via subprocess.
@@ -259,6 +402,8 @@ def execute_command(
     bwrap_path = shutil.which("bwrap")
     is_graphical = _should_wrap_graphical(command)
     has_sudo = "sudo" in command.lower()
+    cwd = working_dir or os.path.expanduser("~")
+    env = _build_execution_env()
 
     # Verificar se AppArmor está bloqueando userns (padrão no Ubuntu 24.04)
     apparmor_blocks_userns = False
@@ -268,16 +413,15 @@ def execute_command(
         with contextlib.suppress(Exception), open("/proc/sys/kernel/apparmor_restrict_unprivileged_userns") as f:
             apparmor_blocks_userns = f.read().strip() == "1"
 
-    # Envolver aplicativos gráficos com nohup
     if is_graphical:
-        command = f"nohup {command} > /dev/null 2>&1 &"
-        log.debug("Comando envolvido com nohup para app gráfico.")
+        log.info("Iniciando aplicativo gráfico: '%s' em '%s'", command[:200], cwd)
+        return _execute_graphical_command(command, cwd=cwd, env=env)
 
     # Comando base usando bash
     cmd_args = ["bash", "-c", command]
 
     # Aplicar sandbox se bwrap disponível, não for app gráfico, não usar sudo e AppArmor permitir
-    if bwrap_path and not is_graphical and not has_sudo and not apparmor_blocks_userns:
+    if bwrap_path and not is_graphical and not has_sudo and not apparmor_blocks_userns and not allow_unsafe:
         log.info("Aplicando sandbox bwrap ao comando.")
         home_dir = os.path.expanduser("~")
         cmd_args = [
@@ -312,31 +456,26 @@ def execute_command(
         log.debug("Bwrap skipado: bloqueado pelo AppArmor restritivo no Ubuntu 24.04.")
     elif bwrap_path and has_sudo:
         log.debug("Bwrap skipado: comando requer sudo.")
-
-    # Diretório de trabalho padrão: home do usuário
-    cwd = working_dir or os.path.expanduser("~")
+    elif bwrap_path and allow_unsafe:
+        log.debug("Bwrap skipado: modo inseguro ativo.")
 
     # Injetar sudo password se necessário
     stdin_data = None
-    if vault and has_sudo:
-        password = vault.get_sudo_password()
+    if has_sudo:
+        password = vault.get_sudo_password() if vault else None
         if password:
             # Substituir sudo por sudo -S para forçar a leitura do stdin
             command_with_sudo_s = re.sub(r"\bsudo\b", "sudo -S", command, flags=re.IGNORECASE)
             cmd_args[-1] = command_with_sudo_s  # Atualiza o script no comando bash -c
             stdin_data = password + "\n"
             log.info("Senha sudo injetada via vault.")
+        else:
+            command_with_sudo_s = re.sub(r"\bsudo\b", "sudo -S", command, flags=re.IGNORECASE)
+            cmd_args[-1] = command_with_sudo_s
+            stdin_data = "\n"
+            log.info("Sudo sem senha; usando -S para evitar travamento.")
 
     log.info("Executando: '%s' em '%s'", command[:200], cwd)
-
-    # Preparar variáveis de ambiente com diretórios XDG
-    env = os.environ.copy()
-    env["DESKTOP"] = _xdg_dir("DESKTOP")
-    env["DOCUMENTS"] = _xdg_dir("DOCUMENTS")
-    env["DOWNLOADS"] = _xdg_dir("DOWNLOAD")
-    env["MUSIC"] = _xdg_dir("MUSIC")
-    env["PICTURES"] = _xdg_dir("PICTURES")
-    env["VIDEOS"] = _xdg_dir("VIDEOS")
 
     try:
         # Usando a lista de argumentos construída (bwrap ou bash -c)

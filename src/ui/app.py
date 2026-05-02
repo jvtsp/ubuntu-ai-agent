@@ -5,6 +5,7 @@ Implementa a janela flutuante (CustomTkinter) sem bordas, com campo de input,
 área de log, indicador de status e integração com o grafo do agente.
 """
 
+import re
 import threading
 
 import customtkinter as ctk
@@ -39,6 +40,8 @@ class UbuntuAgentApp(ctk.CTk):
         self._modal_open = False
         self._is_processing = False
         self._is_expanded = False
+        self._last_activity = "Pronto"
+        self._security_window: ctk.CTkToplevel | None = None
 
         # Registrar callback para acompanhar nós do grafo
         self.agent.set_step_callback(self._on_agent_step)
@@ -52,7 +55,7 @@ class UbuntuAgentApp(ctk.CTk):
         self.minsize(400, 80)
 
         # Tentar definir opacidade (pode não funcionar em Wayland)
-        opacity = self.ui_config.get("opacity", 0.95)
+        opacity = self.ui_config.get("opacity", 1.0)
         import contextlib
 
         with contextlib.suppress(Exception):
@@ -188,11 +191,19 @@ class UbuntuAgentApp(ctk.CTk):
         self.footer = ctk.CTkFrame(self.content_container, fg_color="transparent", height=20)
         hint = ctk.CTkLabel(
             self.footer,
-            text="Enter envia · Esc minimiza · Ctrl +/- ajusta zoom",
+            text="Enter envia · Esc minimiza",
             font=ctk.CTkFont(size=10),
             text_color=(YARU["text_muted_light"], YARU["text_muted_dark"]),
         )
         hint.pack(side="left")
+
+        self.activity_label = ctk.CTkLabel(
+            self.footer,
+            text="Pronto",
+            font=ctk.CTkFont(family=self.font_family, size=10),
+            text_color=(YARU["text_muted_light"], YARU["text_muted_dark"]),
+        )
+        self.activity_label.pack(side="left", padx=(16, 0))
 
         self.token_label = ctk.CTkLabel(
             self.footer,
@@ -207,6 +218,8 @@ class UbuntuAgentApp(ctk.CTk):
             self.content_container,
             placeholder="Peça um diagnóstico, ajuste de serviço, rede ou pacote...",
             on_submit=self._on_submit,
+            on_security_click=self._open_security_mode_dialog,
+            unsafe_mode=self.agent.unsafe_mode,
             font_family=self.font_family,
             font_size=self.font_size,
         )
@@ -267,6 +280,90 @@ class UbuntuAgentApp(ctk.CTk):
 
         settings_window.wait_visibility()
         settings_window.grab_set()
+
+    def _open_security_mode_dialog(self) -> None:
+        """Pergunta qual modo de segurança o agente deve usar."""
+        if self._security_window and self._security_window.winfo_exists():
+            self._security_window.focus()
+            return
+
+        window = ctk.CTkToplevel(self)
+        self._security_window = window
+        window.title("Modo de Segurança")
+        window.geometry("420x230")
+        window.resizable(False, False)
+        window.transient(self)
+        window.attributes("-topmost", True)
+
+        frame = ctk.CTkFrame(
+            window,
+            fg_color=(YARU["surface_light"], YARU["surface_dark"]),
+            corner_radius=8,
+        )
+        frame.pack(fill="both", expand=True, padx=10, pady=10)
+
+        title = ctk.CTkLabel(
+            frame,
+            text="Modo de acesso do agente",
+            font=ctk.CTkFont(family=self.font_family, size=15, weight="bold"),
+            anchor="w",
+        )
+        title.pack(fill="x", padx=14, pady=(14, 6))
+
+        current = "Full access" if self.agent.unsafe_mode else "Acesso limitado"
+        description = ctk.CTkLabel(
+            frame,
+            text=f"Modo atual: {current}\nEscolha como o agente deve tratar comandos gerados.",
+            font=ctk.CTkFont(family=self.font_family, size=12),
+            text_color=(YARU["text_muted_light"], YARU["text_muted_dark"]),
+            justify="left",
+            anchor="w",
+        )
+        description.pack(fill="x", padx=14, pady=(0, 12))
+
+        limited_btn = ctk.CTkButton(
+            frame,
+            text="Acesso limitado",
+            height=38,
+            corner_radius=8,
+            fg_color=(YARU["success"], "#26A269"),
+            hover_color=("#0B6E1A", "#1A7F37"),
+            font=ctk.CTkFont(family=self.font_family, size=12, weight="bold"),
+            command=lambda: self._set_security_mode(False, window),
+        )
+        limited_btn.pack(fill="x", padx=14, pady=(0, 8))
+
+        full_btn = ctk.CTkButton(
+            frame,
+            text="Full access",
+            height=38,
+            corner_radius=8,
+            fg_color=(YARU["error"], "#F66151"),
+            hover_color=("#A90F22", "#C01C28"),
+            font=ctk.CTkFont(family=self.font_family, size=12, weight="bold"),
+            command=lambda: self._set_security_mode(True, window),
+        )
+        full_btn.pack(fill="x", padx=14, pady=(0, 8))
+
+        window.wait_visibility()
+        window.grab_set()
+
+    def _set_security_mode(self, unsafe_mode: bool, window: ctk.CTkToplevel | None = None) -> None:
+        """Aplica o modo de segurança no grafo e atualiza a UI."""
+        self.agent.set_unsafe_mode(unsafe_mode)
+        self.input_field.set_security_mode(unsafe_mode)
+        self._set_activity("Full access ativo" if unsafe_mode else "Acesso limitado ativo")
+        self.log_area.add_message(
+            "Segurança\nModo atual: " + ("Full access" if unsafe_mode else "Acesso limitado"),
+            "warning" if unsafe_mode else "success",
+        )
+        log.warning("Modo de segurança alterado: unsafe_mode=%s", unsafe_mode)
+
+        if window and window.winfo_exists():
+            window.grab_release()
+            window.destroy()
+        self._security_window = None
+        self.input_field.focus_input()
 
     def _zoom_in(self, event=None):
         current = ctk.ScalingTracker.get_widget_scaling(self)
@@ -484,8 +581,28 @@ class UbuntuAgentApp(ctk.CTk):
             )
 
     def _on_agent_step(self, message: str) -> None:
-        """Callback chamado pelo grafo para mostrar passos na UI."""
-        self.after(0, lambda m=message: self.log_area.add_message(m, "info"))
+        """Callback chamado pelo grafo para mostrar progresso compacto."""
+        self.after(0, lambda m=message: self._set_activity(m))
+
+    def _set_activity(self, message: str) -> None:
+        """Atualiza a linha de atividade sem poluir o histórico."""
+        clean = self._clean_step_message(message)
+        self._last_activity = clean
+        self.activity_label.configure(text=clean)
+
+    @staticmethod
+    def _clean_step_message(message: str) -> str:
+        clean = re.sub(r"[^\w\s:/.-]", "", message).strip()
+        replacements = {
+            "Lendo recursos do sistema": "Lendo recursos",
+            "Consultando LLM": "Gerando comando",
+            "Executando comando": "Executando",
+            "Avaliando resultado": "Verificando resultado",
+        }
+        for old, new in replacements.items():
+            if old in clean:
+                return new
+        return clean or "Processando"
 
     def _on_submit(self, text: str) -> None:
         """
@@ -499,7 +616,8 @@ class UbuntuAgentApp(ctk.CTk):
         self.input_field.set_enabled(False)
         self._is_processing = True
         self.status.set_status("processing")
-        self.log_area.add_message(f"🔍 {text}", "info")
+        self._set_activity("Preparando solicitação")
+        self.log_area.add_message(f"Pedido\n{text}", "request")
         log.info("Usuário submeteu: %s", text)
 
         # Executar em thread separada para não bloquear a UI
@@ -509,38 +627,15 @@ class UbuntuAgentApp(ctk.CTk):
     def _run_agent(self, user_input: str) -> None:
         """Executa o grafo do agente em background."""
         try:
-            # Prepara a primeira mensagem do streaming
-            self.after(0, lambda: self.log_area.add_message("🤖 Raciocínio LLM:\n", "system"))
-
             # Conta tokens de entrada
             in_tokens = self.llm.count_tokens(user_input)
             self.after(0, lambda: self.token_label.configure(text=f"Tokens: {in_tokens} In | ... Out"))
 
-            stream_state: dict[str, object] = {"in_code": False, "buffer": ""}
-
-            def on_token(token: str):
-                stream_state["buffer"] = str(stream_state["buffer"]) + token
-                buf = str(stream_state["buffer"])
-
-                # Detecção simples de bloco de código markdown
-                if not stream_state["in_code"] and "```" in buf:
-                    stream_state["in_code"] = True
-                    stream_state["buffer"] = ""
-                elif stream_state["in_code"] and "```" in buf:
-                    stream_state["in_code"] = False
-                    stream_state["buffer"] = ""
-
-                tag = "code" if stream_state["in_code"] else "thought"
-                self.after(0, lambda t=token, tg=tag: self.log_area.append_text(t, (tg,)))
-
-            result = self.agent.run(user_input, stream_callback=on_token)
+            result = self.agent.run(user_input)
 
             # Atualiza tokens totais
             out_tokens = self.llm.count_tokens(result.get("llm_response", ""))
             self.after(0, lambda: self.token_label.configure(text=f"Tokens: {in_tokens} In | {out_tokens} Out"))
-
-            # Adiciona uma quebra de linha ao final do streaming
-            self.after(0, lambda: self.log_area.append_text("\n"))
 
             # Atualizar UI na thread principal
             self.after(0, self._handle_agent_result, result)
@@ -586,7 +681,7 @@ class UbuntuAgentApp(ctk.CTk):
         self._is_processing = True
         self.status.set_status("processing")
         log.info("Usuário confirmou execução do comando.")
-        self.log_area.add_message("✓ Confirmado. Executando...", "info")
+        self._set_activity("Executando ação confirmada")
 
         thread = threading.Thread(target=self._execute_confirmed, args=(state,), daemon=True)
         thread.start()
@@ -614,11 +709,12 @@ class UbuntuAgentApp(ctk.CTk):
     def _show_result(self, message: str, status: str = "info") -> None:
         """Exibe um resultado na área de log e atualiza o status."""
         if message:
-            self.log_area.add_message(message, status)
+            self.log_area.add_message(self._format_result_message(message, status), status)
 
         self._is_processing = False
         self.input_field.set_enabled(True)
         self.input_field.focus_input()
+        self._set_activity("Pronto")
         log.debug("Resultado exibido na UI: status=%s", status)
 
         if status in ("error", "blocked"):
@@ -627,6 +723,44 @@ class UbuntuAgentApp(ctk.CTk):
             self.status.set_status("online")
 
         self._adjust_height()
+
+    @staticmethod
+    def _format_result_message(message: str, status: str) -> str:
+        """Transforma mensagens internas em texto de usuário mais claro."""
+        command_match = re.search(r"\$\s+(.+?)(?:\n\n|\Z)", message, re.DOTALL)
+        command = command_match.group(1).strip() if command_match else ""
+        command = "\n".join(line for line in command.splitlines() if line.strip())
+
+        if status == "success" and "Executado com sucesso" in message:
+            if "(sem saída)" in message:
+                result = "Concluído sem saída no terminal."
+            else:
+                result = message.split("\n\n", maxsplit=2)[-1].strip()
+            if command in {
+                "gnome-terminal",
+                "x-terminal-emulator",
+                "kgx",
+                "konsole",
+                "xfce4-terminal",
+                "terminator",
+                "alacritty",
+                "kitty",
+                "xterm",
+            }:
+                result = "Terminal aberto."
+            return f"Concluído\nComando: {command or 'não informado'}\nResultado: {result}"
+
+        if "Comando excedeu timeout" in message:
+            return (
+                "Tempo limite atingido\n"
+                f"{message.strip()}\n"
+                "A ação foi interrompida para evitar travamento. Tente novamente com um pedido mais específico."
+            )
+
+        if "Confirmação necessária" in message:
+            return message.replace("⚠ ", "").strip()
+
+        return message.strip()
 
     def _adjust_height(self) -> None:
         """Ajusta a altura da janela baseado no conteúdo quando expandido."""
@@ -683,12 +817,16 @@ class UbuntuAgentApp(ctk.CTk):
         import contextlib
 
         with contextlib.suppress(Exception):
+            target = self.ui_config.get("opacity", 1.0)
+            if target >= 0.999:
+                self.attributes("-alpha", 1.0)
+                return
             self.attributes("-alpha", 0.0)
             self._fade_step(0.0)
 
     def _fade_step(self, alpha: float) -> None:
         """Step da animação de fade-in."""
-        target = self.ui_config.get("opacity", 0.95)
+        target = self.ui_config.get("opacity", 1.0)
         if alpha < target:
             alpha = min(alpha + 0.08, target)
             try:

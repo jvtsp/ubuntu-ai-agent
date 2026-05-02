@@ -27,7 +27,7 @@ class LLMClient:
             config: Dicionário com chaves base_url, model, api_key, temperature, timeout.
         """
         self.config = config
-        self.base_url: str = config.get("base_url", "http://localhost:11434/v1")
+        self.base_url: str = self._normalize_base_url(config.get("base_url", "http://localhost:11434/v1"))
         self.model: str = config.get("model", "llama3.1:8b")
         self.api_key: str = config.get("api_key", "not-needed")
         self.temperature: float = config.get("temperature", 0.1)
@@ -46,6 +46,25 @@ class LLMClient:
             max_retries=1,
         )
 
+    @staticmethod
+    def _normalize_base_url(base_url: str) -> str:
+        """Normaliza servidores OpenAI-compatible para apontar para /v1."""
+        url = (base_url or "http://localhost:11434/v1").strip().rstrip("/")
+        if url.endswith("/v1"):
+            return url
+        return f"{url}/v1"
+
+    def _server_root_url(self) -> str:
+        """Retorna a raiz do servidor removendo apenas o sufixo /v1."""
+        if self.base_url.endswith("/v1"):
+            return self.base_url.removesuffix("/v1").rstrip("/")
+        return self.base_url.rstrip("/")
+
+    def _headers(self) -> dict[str, str]:
+        if not self.api_key:
+            return {}
+        return {"Authorization": f"Bearer {self.api_key}"}
+
     def set_model(self, model: str) -> None:
         """
         Troca o modelo ativo em tempo de execução.
@@ -63,19 +82,39 @@ class LLMClient:
         Args:
             base_url: Nova URL base (ex: 'http://192.168.1.100:11434/v1').
         """
-        self.base_url = base_url
+        self.base_url = self._normalize_base_url(base_url)
         self._llm = self._create_client()
 
     def list_models(self) -> list[dict]:
         """
-        Lista os modelos disponíveis no servidor Ollama.
+        Lista os modelos disponíveis no servidor OpenAI-compatible ou Ollama.
 
         Returns:
             Lista de dicts com 'name' e 'size' de cada modelo.
         """
-        root_url = self.base_url.rstrip("/v1").rstrip("/")
         try:
-            resp = requests.get(f"{root_url}/api/tags", timeout=5)
+            resp = requests.get(f"{self.base_url}/models", headers=self._headers(), timeout=5)
+            if resp.status_code == 200:
+                data = resp.json()
+                models = []
+                for m in data.get("data", []):
+                    name = m.get("id") or m.get("name", "")
+                    if name:
+                        models.append(
+                            {
+                                "name": name,
+                                "size": "n/a",
+                                "modified": "",
+                            }
+                        )
+                if models:
+                    return models
+        except (requests.RequestException, ValueError):
+            pass
+
+        root_url = self._server_root_url()
+        try:
+            resp = requests.get(f"{root_url}/api/tags", headers=self._headers(), timeout=5)
             if resp.status_code == 200:
                 data = resp.json()
                 models = []
@@ -89,7 +128,7 @@ class LLMClient:
                         }
                     )
                 return models
-        except requests.RequestException:
+        except (requests.RequestException, ValueError):
             pass
         return []
 
@@ -158,17 +197,18 @@ class LLMClient:
         Returns:
             True se o endpoint responder, False caso contrário.
         """
-        root_url = self.base_url.rstrip("/v1").rstrip("/")
         try:
-            resp = requests.get(root_url, timeout=5)
-            return resp.status_code < 500
+            resp = requests.get(f"{self.base_url}/models", headers=self._headers(), timeout=5)
+            if resp.status_code == 200:
+                return True
         except requests.RequestException:
             pass
 
         # Tenta endpoint específico do Ollama
+        root_url = self._server_root_url()
         try:
-            resp = requests.get(f"{root_url}/api/tags", timeout=5)
-            return resp.status_code < 500
+            resp = requests.get(f"{root_url}/api/tags", headers=self._headers(), timeout=5)
+            return resp.status_code == 200
         except requests.RequestException:
             return False
 

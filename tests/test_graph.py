@@ -1,3 +1,4 @@
+# mypy: ignore-errors
 """
 Testes de integração para o grafo do agente (agent/graph.py).
 Usa LLM mockado para testar o fluxo completo sem dependência externa.
@@ -41,6 +42,54 @@ class TestAgentGraphReadOnly:
         assert result.get("ui_status") in ("success", "info")
         assert result.get("is_complete") is True
 
+    def test_open_terminal_uses_direct_shortcut(self, agent):
+        """Pedido simples de abrir terminal deve bypassar o LLM."""
+        agent._system_ctx["terminal_command"] = "x-terminal-emulator"
+        with patch("src.agent.graph.execute_command") as mock_exec:
+            mock_exec.return_value = MagicMock(
+                stdout="Aplicativo gráfico iniciado em background.",
+                stderr="",
+                exit_code=0,
+                timed_out=False,
+            )
+            result = agent.run("abra o terminal")
+        assert result.get("extracted_command") == "x-terminal-emulator"
+        assert result.get("direct_command") is True
+        agent.llm.invoke.assert_not_called()
+        mock_exec.assert_called_once()
+
+    def test_identity_question_uses_direct_shortcut(self, agent):
+        """Pergunta simples de identidade deve ter resposta local."""
+        with patch("src.agent.graph.execute_command") as mock_exec:
+            mock_exec.return_value = MagicMock(
+                stdout="Sou o Ubuntu Agent, seu assistente local para administrar este Ubuntu.\n",
+                stderr="",
+                exit_code=0,
+                timed_out=False,
+            )
+            result = agent.run("quem esta ai")
+
+        assert "Sou o Ubuntu Agent" in result.get("extracted_command", "")
+        assert result.get("direct_command") is True
+        agent.llm.invoke.assert_not_called()
+        mock_exec.assert_called_once()
+
+    def test_open_ubuntu_settings_uses_direct_shortcut(self, agent):
+        """Abrir configurações do Ubuntu deve usar app gráfico real."""
+        with patch("src.agent.graph.execute_command") as mock_exec:
+            mock_exec.return_value = MagicMock(
+                stdout="Aplicativo gráfico iniciado em background.",
+                stderr="",
+                exit_code=0,
+                timed_out=False,
+            )
+            result = agent.run("abra as configuracoes do ubuntu")
+
+        assert result.get("extracted_command") == "gnome-control-center"
+        assert result.get("direct_command") is True
+        agent.llm.invoke.assert_not_called()
+        mock_exec.assert_called_once()
+
 
 class TestAgentGraphConfirmation:
     def test_sudo_needs_confirmation(self, agent):
@@ -49,6 +98,31 @@ class TestAgentGraphConfirmation:
         result = agent.run("atualize os pacotes")
         assert result.get("needs_confirmation") is True
         assert result.get("is_complete") is False or result.get("needs_confirmation")
+
+    def test_unsafe_mode_executes_without_confirmation(self, security_config, mock_llm_client):
+        """Modo inseguro deve executar comandos mutáveis sem confirmação."""
+        unsafe_config = {**security_config, "unsafe_mode": True}
+        db = Database(":memory:")
+        security = SecurityValidator(unsafe_config)
+        config = {
+            "history": {"max_context_messages": 5},
+            "security": {**unsafe_config, "command_timeout": 10},
+            "agent": {"max_retries": 0},
+        }
+        with (
+            patch("src.agent.graph.collect_system_context", return_value={"desktop": "/home/test/Desktop"}),
+            patch("src.agent.graph.format_system_context", return_value="MOCK CONTEXT"),
+        ):
+            agent = AgentGraph(mock_llm_client, security, db, config)
+
+        agent.llm.invoke.return_value = "```bash\nsudo apt update\n```"
+        with patch("src.agent.graph.execute_command") as mock_exec:
+            mock_exec.return_value = MagicMock(stdout="ok\n", stderr="", exit_code=0, timed_out=False)
+            result = agent.run("atualize os pacotes")
+
+        assert result.get("needs_confirmation") is False
+        assert result.get("ui_status") == "success"
+        assert mock_exec.call_args.kwargs["allow_unsafe"] is True
 
 
 class TestAgentGraphBlocked:
@@ -97,9 +171,10 @@ class TestAgentGraphExtraction:
 class TestAgentGraphTools:
     def test_read_only_native_tool_executes_directly(self, agent):
         """Tool D-Bus read-only deve executar sem confirmação."""
-        agent.llm.invoke.return_value = (
-            '```tool\n{"tool":"dbus_native","action":"service_status","args":{"service":"docker"}}\n```'
-        )
+        agent.llm.invoke.side_effect = [
+            '```tool\n{"tool":"dbus_native","action":"service_status","args":{"service":"docker"}}\n```',
+            "SATISFATORIO"
+        ]
         agent.native_tool.run = MagicMock(
             return_value=NativeToolResult(
                 success=True,
@@ -138,7 +213,10 @@ class TestAgentGraphTools:
                 display_name=MagicMock(return_value='dbus_native.restart_service {"service": "docker"}'),
             ),
             "llm_response": "tool",
+            "max_retries": 1,
+            "retry_count": 0,
         }
+        agent.llm.invoke.return_value = "SATISFATORIO"
         agent.native_tool.run = MagicMock(
             return_value=NativeToolResult(
                 success=True,

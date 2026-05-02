@@ -2,8 +2,8 @@
 # =============================================================================
 
 llm:
-  base_url: "http://localhost:11434/v1"  # Compatível com Ollama, LM Studio, vLLM
-  model: "qwen2.5-coder:3b"
+  base_url: "http://192.168.1.119:1234/v1"  # Compatível com Ollama, LM Studio, vLLM
+  model: "l3-8b-stheno-v3.2-iq-imatrix"
   api_key: "not-needed"                   # Alguns servidores locais exigem um valor
   temperature: 0.1
   timeout: 30
@@ -15,9 +15,10 @@ ui:
   max_log_height: 200
   font_family: "JetBrains Mono"
   font_size: 13
-  opacity: 0.95
+  opacity: 1.0
 
 security:
+  unsafe_mode: true  # Acesso total: desativa bloqueios, confirmações e sandbox bwrap.
   require_confirmation_for:
     - "sudo"
     - "apt install"

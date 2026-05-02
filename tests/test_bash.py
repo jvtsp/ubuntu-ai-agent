@@ -2,10 +2,12 @@
 Testes para o módulo de extração e execução (executor/bash.py).
 """
 
+import os
 from unittest.mock import MagicMock, patch
 
 import pytest
 from src.executor.bash import (
+    _sanitize_graphical_env,
     _sanitize_paths,
     _should_wrap_graphical,
     execute_command,
@@ -28,6 +30,11 @@ class TestExtractCommand:
         result = extract_command("```bash\nsudo apt update && sudo apt upgrade -y\n```")
         assert result.success is True
         assert "apt update" in result.command
+
+    def test_extract_removes_accidental_shell_wrapper(self):
+        result = extract_command('```bash\nbash\ntouch "$DESKTOP/novo_arquivo.txt"\n```')
+        assert result.success is True
+        assert result.command == 'touch "$DESKTOP/novo_arquivo.txt"'
 
     def test_extract_error_response(self):
         result = extract_command("```bash\n# ERRO: Ambígua\n```")
@@ -97,6 +104,10 @@ class TestShouldWrapGraphical:
     def test_detected(self, cmd):
         assert _should_wrap_graphical(cmd) is True
 
+    @pytest.mark.parametrize("cmd", ["gnome-terminal", "x-terminal-emulator", "kgx", "konsole", "xterm"])
+    def test_terminal_detected(self, cmd):
+        assert _should_wrap_graphical(cmd) is True
+
     def test_with_args(self):
         assert _should_wrap_graphical("firefox https://g.com") is True
 
@@ -137,6 +148,50 @@ class TestExecuteCommand:
     def test_xdg_env(self):
         r = execute_command('echo "$DESKTOP"')
         assert r.exit_code == 0 and r.stdout.strip() != ""
+
+    @patch("src.executor.bash._should_wrap_graphical", return_value=True)
+    @patch("src.executor.bash._build_execution_env", return_value={"PATH": os.environ.get("PATH", "")})
+    def test_graphical_requires_session(self, _mock_env, _mock_graphical):
+        r = execute_command("gnome-terminal")
+        assert r.exit_code == -1
+        assert "DISPLAY" in r.stderr
+
+    @patch("src.executor.bash._should_wrap_graphical", return_value=True)
+    @patch(
+        "src.executor.bash._build_execution_env",
+        return_value={"DISPLAY": ":99", "PATH": os.environ.get("PATH", "")},
+    )
+    def test_graphical_reports_immediate_launch_failure(self, _mock_env, _mock_graphical):
+        r = execute_command("definitely-missing-gui-app-codex")
+        assert r.exit_code != 0
+        assert r.stderr.strip()
+
+    def test_graphical_env_removes_snap_variables(self):
+        env = {
+            "HOME": "/home/test/snap/code/237",
+            "SNAP": "/snap/code/237",
+            "SNAP_REAL_HOME": "/home/test",
+            "LD_LIBRARY_PATH": "/snap/core20/lib",
+            "GTK_PATH": "/snap/code/237/usr/lib/gtk",
+            "GIO_MODULE_DIR": "/home/test/snap/code/common/.cache/gio-modules",
+            "XDG_DATA_HOME": "/home/test/snap/code/237/.local/share",
+            "XDG_CONFIG_DIRS": "/snap/code/237/etc/xdg",
+            "XDG_CONFIG_DIRS_VSCODE_SNAP_ORIG": "/etc/xdg",
+            "XDG_DATA_DIRS": "/snap/code/237/usr/share",
+            "XDG_DATA_DIRS_VSCODE_SNAP_ORIG": "/usr/share",
+            "DISPLAY": ":0",
+        }
+
+        clean = _sanitize_graphical_env(env)
+
+        assert clean["HOME"] == "/home/test"
+        assert "SNAP" not in clean
+        assert "LD_LIBRARY_PATH" not in clean
+        assert "GTK_PATH" not in clean
+        assert "GIO_MODULE_DIR" not in clean
+        assert "XDG_DATA_HOME" not in clean
+        assert clean["XDG_CONFIG_DIRS"] == "/etc/xdg"
+        assert clean["XDG_DATA_DIRS"] == "/usr/share"
 
     @patch("src.executor.bash.subprocess.run")
     def test_vault_sudo(self, mock_run):

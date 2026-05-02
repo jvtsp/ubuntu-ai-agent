@@ -82,7 +82,7 @@ class TestReadOnlyClassification:
     def test_terminal_emulators_are_read_only(self, security_config):
         """Emuladores de terminal devem ser considerados read-only (para abrir)."""
         validator = SecurityValidator(security_config)
-        for cmd in ["gnome-terminal", "x-terminal-emulator", "konsole"]:
+        for cmd in ["gnome-terminal", "x-terminal-emulator", "kgx", "konsole", "gnome-control-center"]:
             result = validator.validate(cmd)
             assert result.category == CommandCategory.READ_ONLY, f"'{cmd}' deveria ser READ_ONLY"
 
@@ -158,6 +158,29 @@ class TestNeedsConfirmation:
         # 'gnome-terminal' contém 'rm' mas não é o comando 'rm'
         result = validator.validate("gnome-terminal")
         assert result.category != CommandCategory.NEEDS_CONFIRMATION or "rm" not in result.reason
+
+
+class TestUnsafeMode:
+    """Testes para o modo de acesso total."""
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "rm -rf /",
+            "sudo apt install -y vim",
+            "echo `cat /etc/shadow`",
+            "custom-script --dangerous-flag",
+        ],
+    )
+    def test_unsafe_mode_allows_without_confirmation(self, security_config, command):
+        config = {**security_config, "unsafe_mode": True}
+        validator = SecurityValidator(config)
+
+        result = validator.validate(command)
+
+        assert result.category == CommandCategory.READ_ONLY
+        assert result.is_safe is True
+        assert "Modo inseguro ativo" in result.reason
 
 
 class TestSecurityValidatorInit:

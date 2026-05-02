@@ -6,6 +6,7 @@ receber_input → consultar_llm → extrair_comando → validar_seguranca →
 solicitar_confirmacao / bloquear_cmd / executar_comando → atualizar_ui
 """
 
+import unicodedata
 from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -32,6 +33,7 @@ class AgentState(TypedDict, total=False):
     user_input: str
     history_context: str
     memory_context: str
+    direct_command: bool
     resource_snapshot: dict[str, Any]
     resource_context: str
 
@@ -96,6 +98,7 @@ class AgentGraph:
         self._step_callback = None  # Callback para UI acompanhar nós
         self.resource_tool = ResourceMonitorTool()
         self.native_tool = NativeSystemTool()
+        self.unsafe_mode = bool(getattr(self.security, "unsafe_mode", False))
 
         # Rate limiting
         self._last_request_time = 0.0
@@ -131,8 +134,15 @@ class AgentGraph:
         # Definir ponto de entrada
         graph.set_entry_point("receber_input")
 
-        # Edges lineares
-        graph.add_edge("receber_input", "coletar_recursos")
+        # Edges lineares e atalhos determinísticos
+        graph.add_conditional_edges(
+            "receber_input",
+            self._check_direct_command,
+            {
+                "direct": "validar_seguranca",
+                "llm": "coletar_recursos",
+            },
+        )
         graph.add_edge("coletar_recursos", "consultar_llm")
 
         # Edge condicional após consultar_llm (verifica erro do LLM)
@@ -171,7 +181,7 @@ class AgentGraph:
         )
 
         graph.add_edge("preparar_tool_confirmacao", "atualizar_ui")
-        graph.add_edge("executar_tool", "atualizar_ui")
+        graph.add_edge("executar_tool", "avaliar_resultado")
 
         # Edge condicional após validação de segurança
         graph.add_conditional_edges(
@@ -220,13 +230,86 @@ class AgentGraph:
         """Define callback para a UI acompanhar os passos do grafo."""
         self._step_callback = callback
 
+    def set_unsafe_mode(self, enabled: bool) -> None:
+        """Liga/desliga o modo de acesso total em tempo de execução."""
+        self.unsafe_mode = bool(enabled)
+        if hasattr(self.security, "set_unsafe_mode"):
+            self.security.set_unsafe_mode(self.unsafe_mode)
+
     def _receber_input(self, state: AgentState) -> dict:
         """Captura o input do usuário e carrega histórico + memória operacional."""
         history = self.db.get_last_n(self.max_context)
         context = build_context_messages(history)
         memories = self.db.get_recent_memories(self.max_memory)
         memory_context = build_memory_context(memories)
-        return {"history_context": context, "memory_context": memory_context}
+        update: dict[str, Any] = {"history_context": context, "memory_context": memory_context}
+
+        direct_command = self._direct_command_for(state.get("user_input", ""))
+        if direct_command:
+            self._notify_step("Usando atalho local para pedido simples...")
+            update.update(
+                {
+                    "direct_command": True,
+                    "llm_response": f"direct:{direct_command}",
+                    "extracted_command": direct_command,
+                }
+            )
+
+        return update
+
+    def _direct_command_for(self, user_input: str) -> str:
+        """Resolve pedidos simples e seguros sem depender do LLM."""
+        normalized = self._normalize_intent(user_input)
+        words = set(normalized.split())
+
+        identity_phrases = {
+            "quem esta ai",
+            "quem esta aqui",
+            "quem e voce",
+            "quem e vc",
+            "quem voce e",
+            "who are you",
+        }
+        if normalized in identity_phrases:
+            return 'echo "Sou o Ubuntu Agent, seu assistente local para administrar este Ubuntu."'
+
+        settings_words = {"configuracoes", "configuracao", "settings", "ajustes", "preferencias"}
+        ubuntu_words = {"ubuntu", "sistema", "gnome"}
+        if words & settings_words and (words & ubuntu_words or "configuracoes" in words):
+            return "gnome-control-center"
+
+        if "terminal" not in words:
+            return ""
+
+        close_words = {"feche", "fecha", "fechar", "encerre", "encerrar", "mate", "matar", "kill", "close"}
+        if words & close_words:
+            return ""
+
+        open_words = {
+            "abra",
+            "abre",
+            "abrir",
+            "inicie",
+            "iniciar",
+            "execute",
+            "executar",
+            "lance",
+            "lancar",
+            "open",
+            "start",
+            "launch",
+        }
+        if words & open_words or normalized.strip() == "terminal":
+            return str(self._system_ctx.get("terminal_command") or "x-terminal-emulator")
+
+        return ""
+
+    @staticmethod
+    def _normalize_intent(text: str) -> str:
+        without_accents = "".join(
+            char for char in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(char)
+        )
+        return " ".join(without_accents.replace("-", " ").split())
 
     def _coletar_recursos(self, state: AgentState) -> dict:
         """Coleta snapshot read-only de recursos para orientar o roteador."""
@@ -370,7 +453,7 @@ class AgentGraph:
                 "ui_status": "blocked",
             }
 
-        return {"tool_needs_confirmation": not self.native_tool.is_read_only(tool_call.action)}
+        return {"tool_needs_confirmation": False if self.unsafe_mode else not self.native_tool.is_read_only(tool_call.action)}
 
     def _preparar_tool_confirmacao(self, state: AgentState) -> dict:
         """Prepara confirmação para tool nativa mutável."""
@@ -482,7 +565,7 @@ class AgentGraph:
         self._notify_step("▶ Executando comando...")
         log.info("Executando comando: %s", command)
 
-        result = execute_command(command, timeout=self.command_timeout, vault=self.vault)
+        result = execute_command(command, timeout=self.command_timeout, vault=self.vault, allow_unsafe=self.unsafe_mode)
         log.info("Resultado: exit_code=%d, timed_out=%s", result.exit_code, result.timed_out)
         if result.stderr:
             log.debug("stderr: %s", result.stderr[:500])
@@ -516,9 +599,14 @@ class AgentGraph:
         user_input = state.get("user_input", "")
         command = state.get("extracted_command", "")
         execution = state.get("execution_result")
+        tool_result = state.get("tool_result")
 
         # Se o comando deu timeout, não avaliar
         if execution and execution.timed_out:
+            return {"is_complete": True}
+
+        # Atalhos locais já são intencionais e não precisam de avaliação do LLM.
+        if state.get("direct_command"):
             return {"is_complete": True}
 
         # Se já atingiu máximo de retentativas
@@ -528,15 +616,32 @@ class AgentGraph:
 
         self._notify_step("🧠 Avaliando resultado...")
 
-        stdout = execution.stdout.strip() if execution and execution.stdout else "(sem saída)"
-        exit_code = execution.exit_code if execution else -1
+        if execution:
+            stdout = execution.stdout.strip() if execution and execution.stdout else "(sem saída)"
+            exit_code = execution.exit_code if execution else -1
+            eval_message = (
+                f"Pedido original do usuário: {user_input}\n"
+                f"Comando executado: {command}\n"
+                f"Código de saída: {exit_code}\n"
+                f"Saída do comando: {stdout[:1000]}"
+            )
+        elif tool_result:
+            if not isinstance(tool_result, NativeToolResult):
+                return {"is_complete": True}
 
-        eval_message = (
-            f"Pedido original do usuário: {user_input}\n"
-            f"Comando executado: {command}\n"
-            f"Código de saída: {exit_code}\n"
-            f"Saída do comando: {stdout[:1000]}"
-        )
+            if tool_result.success:
+                return {"is_complete": True}
+            else:
+                feedback = f"A ferramenta nativa falhou: {tool_result.error_message}. NÃO USE a ferramenta nativa novamente. Gere um comando BASH alternativo."
+                self._notify_step("🔄 Retentando: Falha na tool nativa")
+                log.info("Auto-retentando tool nativa: %s", feedback)
+                return {
+                    "retry_count": retry_count + 1,
+                    "evaluation_feedback": feedback,
+                    "is_complete": False,
+                }
+        else:
+            return {"is_complete": True}
 
         try:
             evaluation = self.llm.invoke(EVALUATION_PROMPT, eval_message)
@@ -619,6 +724,12 @@ class AgentGraph:
         if state.get("llm_error"):
             return "error"
         return "success"
+
+    def _check_direct_command(self, state: AgentState) -> Literal["direct", "llm"]:
+        """Roteia atalhos locais antes de consultar o LLM."""
+        if state.get("direct_command") and state.get("extracted_command"):
+            return "direct"
+        return "llm"
 
     def _check_extraction(self, state: AgentState) -> Literal["tool", "valid", "invalid"]:
         """Verifica se a extração do comando foi bem-sucedida."""
@@ -728,7 +839,7 @@ class AgentGraph:
             )
             log.info("Executando confirmado (tentativa %d): %s", retry_count + 1, command)
 
-            result = execute_command(command, timeout=self.command_timeout, vault=self.vault)
+            result = execute_command(command, timeout=self.command_timeout, vault=self.vault, allow_unsafe=self.unsafe_mode)
             state["user_confirmed"] = True
             state["execution_result"] = result
 
@@ -836,7 +947,7 @@ class AgentGraph:
         return state
 
     def _execute_confirmed_tool(self, state: AgentState) -> AgentState:
-        """Executa tool nativa mutável já confirmada."""
+        """Executa tool nativa mutável já confirmada, com auto-recuperação."""
         tool_call = state.get("tool_call")
         if not tool_call:
             state["ui_message"] = "Tool call ausente."
@@ -845,38 +956,121 @@ class AgentGraph:
             return state
 
         self._notify_step(f"Executando tool confirmada {tool_call.tool}.{tool_call.action}...")
+
         if tool_call.tool == "resource_snapshot":
             snapshot = self.resource_tool.run()
             state["tool_result"] = snapshot
             state["ui_message"] = f"Snapshot de recursos:\n\n{self._resource_json(snapshot)}"
             state["ui_status"] = "success"
-        else:
-            result = self.native_tool.run(tool_call.action, tool_call.args)
-            state["tool_result"] = result
-            state["ui_message"] = self._format_tool_result(tool_call, result)
-            state["ui_status"] = "success" if result.success else "warning"
 
+            state["user_confirmed"] = True
+            state["is_complete"] = True
+            extracted = "native:resource_snapshot"
+            state["extracted_command"] = extracted
+            self.db.save_command(
+                user_input=state.get("user_input", ""),
+                llm_response=state.get("llm_response"),
+                extracted_command=extracted,
+                stdout=self._resource_json(snapshot),
+                stderr=None,
+                exit_code=0,
+                confirmed=True,
+            )
+            return state
+
+        result = self.native_tool.run(tool_call.action, tool_call.args)
+        state["tool_result"] = result
         state["user_confirmed"] = True
-        state["is_complete"] = True
+
         extracted = f"native:{tool_call.display_name()}"
         state["extracted_command"] = extracted
-        stdout = self._tool_stdout(state.get("tool_result"))
-        exit_code = self._tool_exit_code(state.get("tool_result"))
+
+        if result.success:
+            state["ui_message"] = self._format_tool_result(tool_call, result)
+            state["ui_status"] = "success"
+            state["is_complete"] = True
+
+            self.db.save_command(
+                user_input=state.get("user_input", ""),
+                llm_response=state.get("llm_response"),
+                extracted_command=extracted,
+                stdout=result.to_json(),
+                stderr=None,
+                exit_code=0,
+                confirmed=True,
+            )
+            return state
+
+        # Falhou. Vamos tentar recuperar gerando um comando alternativo (ex: Bash).
+        state["ui_message"] = self._format_tool_result(tool_call, result)
+        state["ui_status"] = "warning"
+
+        feedback = f"A ferramenta nativa falhou: {result.error_message}. NÃO USE a ferramenta nativa. Gere um comando BASH ou CLI nativo alternativo que cumpra o mesmo objetivo."
+        self._notify_step("🔄 Retentando: Falha na tool nativa. Consultando LLM...")
+        log.info("Auto-retentando tool nativa confirmada: %s", feedback)
+
+        user_input = state.get("user_input", "")
+        context = state.get("history_context", "")
+        message_parts = [self._system_ctx_str]
+        if context:
+            message_parts.append(context)
+        message_parts.append(f"Solicitação do usuário: {user_input}")
+        message_parts.append(
+            f"\nATENÇÃO: A tentativa anterior falhou.\n"
+            f"Ação: {tool_call.action}\nErro: {result.error_message}\n"
+            f"Feedback: {feedback}\n"
+            f"Gere um comando CORRIGIDO."
+        )
+        full_message = "\n\n".join(message_parts)
+
+        try:
+            new_response = self.llm.invoke(SYSTEM_PROMPT, full_message)
+            new_extraction = extract_command(new_response)
+            if new_extraction.success:
+                safety = self.security.validate(new_extraction.command)
+                if safety.category == CommandCategory.BLOCKED:
+                    state["ui_message"] = f"Retentativa bloqueada por segurança: {safety.reason}"
+                    state["ui_status"] = "blocked"
+                    state["is_complete"] = True
+                elif safety.category == CommandCategory.NEEDS_CONFIRMATION:
+                    state["ui_message"] = (
+                        "A retentativa gerou um novo comando que precisa de nova confirmação:\n\n"
+                        f"$ {new_extraction.command}\n\n{safety.reason}"
+                    )
+                    state["ui_status"] = "pending"
+                    state["needs_confirmation"] = True
+                    state["is_complete"] = False
+                    # Remove tool_call so the next execute_confirmed handles it as bash
+                    state.pop("tool_call", None)
+                    state["extracted_command"] = new_extraction.command
+                    state["llm_response"] = new_response
+                else:
+                    # Execute imediatamente e use o evaluate loop principal se necessário
+                    # Para simplificar, configuramos o state para a UI re-acinar execute_confirmed.
+                    # Mas como isso precisa de "pending", passamos como pending mesmo sem bloqueio.
+                    state["ui_message"] = (
+                        "A retentativa gerou um novo comando Bash (automático, mas aguarda confirmação para segurança):\n\n"
+                        f"$ {new_extraction.command}"
+                    )
+                    state["ui_status"] = "pending"
+                    state["needs_confirmation"] = True
+                    state["is_complete"] = False
+                    state.pop("tool_call", None)
+                    state["extracted_command"] = new_extraction.command
+                    state["llm_response"] = new_response
+            else:
+                state["is_complete"] = True
+        except Exception as e:
+            log.warning("Erro na auto-recuperação da tool: %s", str(e)[:200])
+            state["is_complete"] = True
+
         self.db.save_command(
             user_input=state.get("user_input", ""),
             llm_response=state.get("llm_response"),
             extracted_command=extracted,
-            stdout=stdout,
-            stderr=None,
-            exit_code=exit_code,
-            confirmed=True,
-        )
-        self.db.remember_interaction(
-            user_input=state.get("user_input", ""),
-            extracted_command=extracted,
-            stdout=stdout,
-            stderr=None,
-            exit_code=exit_code,
+            stdout=result.to_json(),
+            stderr=result.error_message,
+            exit_code=1,
             confirmed=True,
         )
         return state

@@ -96,12 +96,14 @@ READ_ONLY_COMMANDS = {
     "inxi",
     "gnome-terminal",
     "x-terminal-emulator",
+    "kgx",
     "konsole",
     "xfce4-terminal",
     "terminator",
     "alacritty",
     "kitty",
     "xterm",
+    "gnome-control-center",
 }
 
 
@@ -116,6 +118,7 @@ class SecurityValidator:
             config: Dicionário com chaves 'blocked_patterns' e 'require_confirmation_for'.
         """
         raw_patterns = config.get("blocked_patterns", [])
+        self.unsafe_mode: bool = bool(config.get("unsafe_mode", False))
         self.blocked_patterns: list[re.Pattern] = []
         import contextlib
 
@@ -124,6 +127,10 @@ class SecurityValidator:
                 self.blocked_patterns.append(re.compile(pattern, re.IGNORECASE))
 
         self.confirmation_keywords: list[str] = config.get("require_confirmation_for", [])
+
+    def set_unsafe_mode(self, enabled: bool) -> None:
+        """Liga/desliga o modo de acesso total em tempo de execução."""
+        self.unsafe_mode = bool(enabled)
 
     def validate(self, command: str) -> SafetyResult:
         """
@@ -135,6 +142,13 @@ class SecurityValidator:
         Returns:
             SafetyResult com a categoria, se é seguro, e o motivo.
         """
+        if self.unsafe_mode:
+            return SafetyResult(
+                category=CommandCategory.READ_ONLY,
+                is_safe=True,
+                reason="Modo inseguro ativo: bloqueios e confirmações desativados.",
+            )
+
         # 1. Verificar contra padrões bloqueados
         for pattern in self.blocked_patterns:
             if pattern.search(command):

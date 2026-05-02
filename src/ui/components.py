@@ -37,6 +37,8 @@ class InputField(ctk.CTkFrame):
         master: ctk.CTkBaseClass,
         placeholder: str = "Digite um comando em português...",
         on_submit: Callable[[str], None] | None = None,
+        on_security_click: Callable[[], None] | None = None,
+        unsafe_mode: bool = False,
         font_family: str = "JetBrains Mono",
         font_size: int = 14,
         **kwargs,
@@ -54,7 +56,9 @@ class InputField(ctk.CTkFrame):
         super().__init__(master, fg_color="transparent", **kwargs)
 
         self.on_submit = on_submit
+        self.on_security_click = on_security_click
         self.placeholder = placeholder
+        self._unsafe_mode = unsafe_mode
 
         self.entry = ctk.CTkEntry(
             self,
@@ -74,7 +78,18 @@ class InputField(ctk.CTkFrame):
             text_color=(YARU["accent"], "#FF8C5A"),
         )
 
+        self.security_button = ctk.CTkButton(
+            self,
+            width=104,
+            height=32,
+            corner_radius=6,
+            font=ctk.CTkFont(family=font_family, size=11, weight="bold"),
+            command=self._handle_security_click,
+        )
+        self.set_security_mode(unsafe_mode)
+
         self.prompt_label.pack(side="left", padx=(10, 5), pady=2)
+        self.security_button.pack(side="left", padx=(2, 6), pady=2)
         self.entry.pack(side="left", fill="x", expand=True, padx=2, pady=2)
         self.entry.bind("<Return>", self._handle_submit)
 
@@ -95,6 +110,29 @@ class InputField(ctk.CTkFrame):
     def set_enabled(self, enabled: bool) -> None:
         """Habilita ou desabilita o campo."""
         self.entry.configure(state="normal" if enabled else "disabled")
+
+    def set_security_mode(self, unsafe_mode: bool) -> None:
+        """Atualiza o botão de modo de segurança."""
+        self._unsafe_mode = bool(unsafe_mode)
+        if self._unsafe_mode:
+            self.security_button.configure(
+                text="FULL ACCESS",
+                fg_color=(YARU["error"], "#F66151"),
+                hover_color=("#A90F22", "#C01C28"),
+                text_color="#FFFFFF",
+            )
+        else:
+            self.security_button.configure(
+                text="LIMITADO",
+                fg_color=(YARU["success"], "#26A269"),
+                hover_color=("#0B6E1A", "#1A7F37"),
+                text_color="#FFFFFF",
+            )
+
+    def _handle_security_click(self) -> None:
+        """Abre o seletor de modo de segurança."""
+        if self.on_security_click:
+            self.on_security_click()
 
 
 class StatusIndicator(ctk.CTkFrame):
@@ -165,6 +203,8 @@ class LogArea(ctk.CTkFrame):
         "warning": YARU["warning"],
         "blocked": YARU["error"],
         "pending": YARU["accent"],
+        "request": YARU["info"],
+        "muted": YARU["text_muted_light"],
         "info": YARU["info"],
     }
 
@@ -199,7 +239,8 @@ class LogArea(ctk.CTkFrame):
         self.textbox = ctk.CTkTextbox(
             self,
             font=ctk.CTkFont(family=font_family, size=font_size),
-            fg_color="transparent",
+            fg_color=(YARU["panel_light"], "#202020"),
+            text_color=("#1C1C1C", "#F2F2F2"),
             wrap="word",
             height=0,
             corner_radius=8,
@@ -208,7 +249,7 @@ class LogArea(ctk.CTkFrame):
         self.textbox.pack(fill="both", expand=True, padx=8, pady=8)
 
         # Configurar tags para cores
-        self.textbox.tag_config("thought", foreground="#888888")
+        self.textbox.tag_config("thought", foreground="#666666")
         self.textbox.tag_config("code", foreground=YARU["accent"])
         self.textbox.tag_config("system", foreground=YARU["aubergine"])
         for status, color in self.STATUS_COLORS.items():
@@ -232,7 +273,7 @@ class LogArea(ctk.CTkFrame):
         self.textbox.configure(state="normal")
 
         if self._has_content:
-            self.textbox.insert("end", "\n" + "─" * 60 + "\n", ("system",))
+            self.textbox.insert("end", "\n\n", ("muted",))
 
         all_tags = (status, *tags)
         self.textbox.insert("end", message + "\n", all_tags)

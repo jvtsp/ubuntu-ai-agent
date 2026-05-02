@@ -35,6 +35,14 @@ class TestCollectSystemContext:
         assert isinstance(ctx, dict)
         assert "username" in ctx
 
+    @patch("src.system.context.shutil.which")
+    def test_collects_terminal_context(self, mock_which):
+        """Deve detectar emuladores de terminal disponíveis."""
+        mock_which.side_effect = lambda cmd: f"/usr/bin/{cmd}" if cmd in {"x-terminal-emulator", "gnome-terminal"} else None
+        ctx = collect_system_context()
+        assert ctx["terminal_command"] == "gnome-terminal"
+        assert "gnome-terminal" in ctx["terminal_emulators"]
+
 
 class TestFormatSystemContext:
     def test_format_contains_all_fields(self, system_context):
@@ -46,6 +54,7 @@ class TestFormatSystemContext:
         assert "$MUSIC" in result
         assert "$PICTURES" in result
         assert "$VIDEOS" in result
+        assert "Terminal padrão detectado" in result
 
     def test_format_contains_os_info(self, system_context):
         """Formato deve conter informações do SO."""

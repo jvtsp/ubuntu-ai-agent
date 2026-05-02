@@ -6,11 +6,25 @@ para que o LLM gere comandos precisos para esta máquina específica.
 """
 
 import os
+import shutil
 import subprocess
+from typing import Any
 
 from src.logger import get_logger
 
 log = get_logger("system.context")
+
+TERMINAL_CANDIDATES = (
+    "gnome-terminal",
+    "kgx",
+    "x-terminal-emulator",
+    "terminator",
+    "xfce4-terminal",
+    "konsole",
+    "xterm",
+    "alacritty",
+    "kitty",
+)
 
 
 def _run_quiet(cmd: str, default: str = "") -> str:
@@ -24,14 +38,19 @@ def _run_quiet(cmd: str, default: str = "") -> str:
         return default
 
 
-def collect_system_context() -> dict:
+def _available_terminals() -> list[str]:
+    """Lista emuladores de terminal disponíveis no PATH, em ordem de preferência."""
+    return [terminal for terminal in TERMINAL_CANDIDATES if shutil.which(terminal)]
+
+
+def collect_system_context() -> dict[str, Any]:
     """
     Coleta informações do sistema operacional e do usuário.
 
     Returns:
         Dicionário com informações do sistema.
     """
-    ctx = {}
+    ctx: dict[str, Any] = {}
 
     # Usuário e máquina
     ctx["username"] = os.environ.get("USER", _run_quiet("whoami", "user"))
@@ -54,9 +73,16 @@ def collect_system_context() -> dict:
     ctx["arch"] = _run_quiet("uname -m", "x86_64")
     ctx["locale"] = os.environ.get("LANG", "en_US.UTF-8")
     ctx["shell"] = os.environ.get("SHELL", "/bin/bash")
+    terminals = _available_terminals()
+    ctx["terminal_emulators"] = terminals
+    ctx["terminal_command"] = terminals[0] if terminals else "x-terminal-emulator"
 
     log.info(
-        "Contexto do sistema coletado: user=%s, desktop=%s, locale=%s", ctx["username"], ctx["desktop"], ctx["locale"]
+        "Contexto do sistema coletado: user=%s, desktop=%s, locale=%s, terminal=%s",
+        ctx["username"],
+        ctx["desktop"],
+        ctx["locale"],
+        ctx["terminal_command"],
     )
 
     return ctx
@@ -80,6 +106,8 @@ def format_system_context(ctx: dict) -> str:
         f"- SO: {ctx['os_version']} ({ctx['arch']})\n"
         f"- Locale: {ctx['locale']}\n"
         f"- Shell: {ctx['shell']}\n"
+        f"- Terminal padrão detectado: {ctx.get('terminal_command', 'x-terminal-emulator')}\n"
+        f"- Terminais disponíveis: {', '.join(ctx.get('terminal_emulators', [])) or 'não detectados'}\n"
         f"\n"
         f"VARIÁVEIS DE AMBIENTE DISPONÍVEIS (o sistema as define automaticamente):\n"
         f'- $DESKTOP = "{ctx["desktop"]}"\n'
