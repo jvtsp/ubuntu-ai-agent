@@ -9,6 +9,7 @@ import pytest
 from src.agent.graph import AgentGraph
 from src.executor.safety import SecurityValidator
 from src.storage.database import Database
+from src.tools.dbus_native import NativeToolResult
 
 
 @pytest.fixture
@@ -91,6 +92,68 @@ class TestAgentGraphExtraction:
         agent.llm.invoke.return_value = "```bash\n# ERRO: Pedido impossível\n```"
         result = agent.run("faça o impossível")
         assert result.get("ui_status") == "warning"
+
+
+class TestAgentGraphTools:
+    def test_read_only_native_tool_executes_directly(self, agent):
+        """Tool D-Bus read-only deve executar sem confirmação."""
+        agent.llm.invoke.return_value = (
+            '```tool\n{"tool":"dbus_native","action":"service_status","args":{"service":"docker"}}\n```'
+        )
+        agent.native_tool.run = MagicMock(
+            return_value=NativeToolResult(
+                success=True,
+                tool="dbus_native",
+                action="service_status",
+                data={"service": "docker.service", "active_state": "active"},
+            )
+        )
+
+        result = agent.run("status do docker")
+
+        assert result.get("ui_status") == "success"
+        assert "native:dbus_native.service_status" in result.get("extracted_command", "")
+        agent.native_tool.run.assert_called_once_with("service_status", {"service": "docker"})
+
+    def test_mutating_native_tool_needs_confirmation(self, agent):
+        """Tool D-Bus mutável deve pedir confirmação."""
+        agent.llm.invoke.return_value = (
+            '```tool\n{"tool":"dbus_native","action":"restart_service","args":{"service":"docker"}}\n```'
+        )
+
+        result = agent.run("reinicie o docker")
+
+        assert result.get("needs_confirmation") is True
+        assert result.get("confirmation_kind") == "tool"
+
+    def test_execute_confirmed_native_tool(self, agent):
+        """Tool confirmada deve executar via executor nativo, não via Bash."""
+        state = {
+            "user_input": "reinicie o docker",
+            "tool_call": MagicMock(
+                tool="dbus_native",
+                action="restart_service",
+                args={"service": "docker"},
+                explanation="Reiniciando serviço.",
+                display_name=MagicMock(return_value='dbus_native.restart_service {"service": "docker"}'),
+            ),
+            "llm_response": "tool",
+        }
+        agent.native_tool.run = MagicMock(
+            return_value=NativeToolResult(
+                success=True,
+                tool="dbus_native",
+                action="restart_service",
+                data={"job_path": "/job/1"},
+                read_only=False,
+            )
+        )
+
+        result = agent.execute_confirmed(state)
+
+        assert result.get("is_complete") is True
+        assert result.get("ui_status") == "success"
+        agent.native_tool.run.assert_called_once_with("restart_service", {"service": "docker"})
 
 
 class TestAgentGraphSelfHealing:

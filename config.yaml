@@ -43,6 +43,7 @@ security:
 
 history:
   max_context_messages: 5
+  max_memory_items: 8
   db_path: "data/history.db"
 
 logging:

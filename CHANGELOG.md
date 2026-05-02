@@ -13,11 +13,17 @@ e este projeto adere ao [Versionamento Semântico](https://semver.org/lang/pt-BR
 - Arquivo LICENSE (MIT)
 - pyproject.toml com configurações de ruff e mypy
 - CONTRIBUTING.md e CHANGELOG.md
+- Tool `resource_snapshot` com psutil para CPU, RAM, I/O de disco e rede
+- Memória operacional em SQLite para fatos recentes da sessão
+- Tools nativas D-Bus com pydbus para serviços, NetworkManager, GNOME e status de pacotes
+- Faixa visual de recursos na UI com tema inspirado no Yaru/Ubuntu
 
 ### Segurança
 - Detecção de subshell/backtick na camada de segurança
 - Rate limiting no grafo do agente
 - Limpeza segura de memória no Vault
+- Revalidação de retentativas self-healing antes de executar comandos corrigidos
+- Classificação read-only mais restrita para redirecionamentos, pipes mutáveis e flags como `find -delete`
 
 ## [0.1.0] - 2026-04-28
 

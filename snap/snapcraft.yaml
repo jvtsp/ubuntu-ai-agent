@@ -35,9 +35,13 @@ parts:
       - python3-dev
       - libdbus-1-dev
       - libgirepository1.0-dev
-    stage-packages:
+      - python3-gi
+      stage-packages:
       - python3-tk
+      - python3-gi
       - libdbus-1-3
+      - gir1.2-glib-2.0
+      - gir1.2-networkmanager-1.0
       - xdg-user-dirs
     override-build: |
       craftctl default

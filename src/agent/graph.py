@@ -6,18 +6,21 @@ receber_input → consultar_llm → extrair_comando → validar_seguranca →
 solicitar_confirmacao / bloquear_cmd / executar_comando → atualizar_ui
 """
 
-from typing import Literal, TypedDict
+from typing import Any, Literal, TypedDict
 
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
 from src.agent.llm import LLMClient
-from src.agent.prompts import EVALUATION_PROMPT, SYSTEM_PROMPT, build_context_messages
+from src.agent.prompts import EVALUATION_PROMPT, SYSTEM_PROMPT, build_context_messages, build_memory_context
+from src.agent.tool_calls import ToolCall, extract_tool_call
 from src.executor.bash import ExecutionResult, ExtractionResult, execute_command, extract_command
 from src.executor.safety import CommandCategory, SafetyResult, SecurityValidator
 from src.logger import get_logger
 from src.storage.database import Database
 from src.system.context import collect_system_context, format_system_context
+from src.tools.dbus_native import NativeSystemTool, NativeToolResult
+from src.tools.resources import ResourceMonitorTool
 
 log = get_logger("agent.graph")
 
@@ -28,6 +31,9 @@ class AgentState(TypedDict, total=False):
     # Input
     user_input: str
     history_context: str
+    memory_context: str
+    resource_snapshot: dict[str, Any]
+    resource_context: str
 
     # LLM
     llm_response: str
@@ -36,6 +42,10 @@ class AgentState(TypedDict, total=False):
     # Extração
     extraction: ExtractionResult
     extracted_command: str
+    tool_call: ToolCall
+    tool_result: NativeToolResult | dict[str, Any]
+    tool_needs_confirmation: bool
+    confirmation_kind: str
 
     # Segurança
     safety_result: SafetyResult
@@ -80,9 +90,12 @@ class AgentGraph:
         self.config = config
         self.vault = vault
         self.max_context = config.get("history", {}).get("max_context_messages", 5)
+        self.max_memory = config.get("history", {}).get("max_memory_items", 8)
         self.command_timeout = config.get("security", {}).get("command_timeout", 60)
         self.max_retries = config.get("agent", {}).get("max_retries", 2)
         self._step_callback = None  # Callback para UI acompanhar nós
+        self.resource_tool = ResourceMonitorTool()
+        self.native_tool = NativeSystemTool()
 
         # Rate limiting
         self._last_request_time = 0.0
@@ -101,9 +114,13 @@ class AgentGraph:
 
         # Adicionar nós
         graph.add_node("receber_input", self._receber_input)
+        graph.add_node("coletar_recursos", self._coletar_recursos)
         graph.add_node("consultar_llm", self._consultar_llm)
         graph.add_node("extrair_comando", self._extrair_comando)
         graph.add_node("solicitar_clarifica", self._solicitar_clarifica)
+        graph.add_node("validar_tool", self._validar_tool)
+        graph.add_node("preparar_tool_confirmacao", self._preparar_tool_confirmacao)
+        graph.add_node("executar_tool", self._executar_tool)
         graph.add_node("validar_seguranca", self._validar_seguranca)
         graph.add_node("bloquear_cmd", self._bloquear_cmd)
         graph.add_node("preparar_confirmacao", self._preparar_confirmacao)
@@ -115,7 +132,8 @@ class AgentGraph:
         graph.set_entry_point("receber_input")
 
         # Edges lineares
-        graph.add_edge("receber_input", "consultar_llm")
+        graph.add_edge("receber_input", "coletar_recursos")
+        graph.add_edge("coletar_recursos", "consultar_llm")
 
         # Edge condicional após consultar_llm (verifica erro do LLM)
         graph.add_conditional_edges(
@@ -132,6 +150,7 @@ class AgentGraph:
             "extrair_comando",
             self._check_extraction,
             {
+                "tool": "validar_tool",
                 "valid": "validar_seguranca",
                 "invalid": "solicitar_clarifica",
             },
@@ -139,6 +158,20 @@ class AgentGraph:
 
         # Clarificação vai direto para atualizar_ui
         graph.add_edge("solicitar_clarifica", "atualizar_ui")
+
+        # Edge condicional após validação de tool
+        graph.add_conditional_edges(
+            "validar_tool",
+            self._check_tool_safety,
+            {
+                "read_only": "executar_tool",
+                "needs_confirmation": "preparar_tool_confirmacao",
+                "blocked": "bloquear_cmd",
+            },
+        )
+
+        graph.add_edge("preparar_tool_confirmacao", "atualizar_ui")
+        graph.add_edge("executar_tool", "atualizar_ui")
 
         # Edge condicional após validação de segurança
         graph.add_conditional_edges(
@@ -188,15 +221,43 @@ class AgentGraph:
         self._step_callback = callback
 
     def _receber_input(self, state: AgentState) -> dict:
-        """Captura o input do usuário e carrega o contexto do histórico."""
+        """Captura o input do usuário e carrega histórico + memória operacional."""
         history = self.db.get_last_n(self.max_context)
         context = build_context_messages(history)
-        return {"history_context": context}
+        memories = self.db.get_recent_memories(self.max_memory)
+        memory_context = build_memory_context(memories)
+        return {"history_context": context, "memory_context": memory_context}
+
+    def _coletar_recursos(self, state: AgentState) -> dict:
+        """Coleta snapshot read-only de recursos para orientar o roteador."""
+        self._notify_step("Lendo recursos do sistema...")
+        try:
+            snapshot = self.resource_tool.run()
+            resource_context = (
+                "--- Estado atual da máquina (snapshot read-only) ---\n"
+                f"{self.resource_tool.run_json() if not snapshot else self._resource_json(snapshot)}\n"
+                "---"
+            )
+            return {"resource_snapshot": snapshot, "resource_context": resource_context}
+        except Exception as e:
+            log.warning("Falha ao coletar recursos: %s", str(e)[:200])
+            return {
+                "resource_snapshot": {},
+                "resource_context": f"--- Estado atual da máquina indisponível: {str(e)[:160]} ---",
+            }
+
+    @staticmethod
+    def _resource_json(snapshot: dict[str, Any]) -> str:
+        import json
+
+        return json.dumps(snapshot, ensure_ascii=False, sort_keys=True)
 
     def _consultar_llm(self, state: AgentState) -> dict:
         """Envia o input + contexto ao LLM."""
         user_input = state.get("user_input", "")
         context = state.get("history_context", "")
+        memory_context = state.get("memory_context", "")
+        resource_context = state.get("resource_context", "")
         feedback = state.get("evaluation_feedback", "")
         retry_count = state.get("retry_count", 0)
 
@@ -209,6 +270,10 @@ class AgentGraph:
         message_parts = []
         # Contexto do sistema (diretórios reais, locale, etc.)
         message_parts.append(self._system_ctx_str)
+        if resource_context:
+            message_parts.append(resource_context)
+        if memory_context:
+            message_parts.append(memory_context)
         if context:
             message_parts.append(context)
         message_parts.append(f"Solicitação do usuário: {user_input}")
@@ -254,13 +319,102 @@ class AgentGraph:
             }
 
     def _extrair_comando(self, state: AgentState) -> dict:
-        """Extrai o comando Bash da resposta do LLM."""
+        """Extrai chamada de tool nativa ou comando Bash da resposta do LLM."""
         llm_response = state.get("llm_response", "")
+        tool_extraction = extract_tool_call(llm_response)
+        if tool_extraction.success and tool_extraction.tool_call:
+            tool_call = tool_extraction.tool_call
+            log.info("Tool extraída: %s.%s", tool_call.tool, tool_call.action)
+            return {
+                "tool_call": tool_call,
+                "extracted_command": "",
+            }
+
         result = extract_command(llm_response)
         log.info("Extração: success=%s, command='%s'", result.success, result.command[:100] if result.command else "")
         return {
             "extraction": result,
             "extracted_command": result.command if result.success else "",
+        }
+
+    def _validar_tool(self, state: AgentState) -> dict:
+        """Valida tool call nativa e decide se precisa de confirmação."""
+        tool_call = state.get("tool_call")
+        if not tool_call:
+            return {
+                "blocked_reason": "Nenhuma tool call encontrada.",
+                "ui_message": "Tool call ausente.",
+                "ui_status": "blocked",
+            }
+
+        if tool_call.tool == "resource_snapshot" and tool_call.action == "read":
+            return {"tool_needs_confirmation": False}
+        if tool_call.tool == "resource_snapshot":
+            return {
+                "blocked_reason": f"Ação resource_snapshot desconhecida: {tool_call.action}",
+                "ui_message": f"Ação resource_snapshot desconhecida: {tool_call.action}",
+                "ui_status": "blocked",
+            }
+
+        if tool_call.tool != self.native_tool.name:
+            return {
+                "blocked_reason": f"Tool desconhecida: {tool_call.tool}",
+                "ui_message": f"Tool desconhecida: {tool_call.tool}",
+                "ui_status": "blocked",
+            }
+
+        if not self.native_tool.is_known_action(tool_call.action):
+            return {
+                "blocked_reason": f"Ação nativa desconhecida: {tool_call.action}",
+                "ui_message": f"Ação nativa desconhecida: {tool_call.action}",
+                "ui_status": "blocked",
+            }
+
+        return {"tool_needs_confirmation": not self.native_tool.is_read_only(tool_call.action)}
+
+    def _preparar_tool_confirmacao(self, state: AgentState) -> dict:
+        """Prepara confirmação para tool nativa mutável."""
+        tool_call = state.get("tool_call")
+        display = tool_call.display_name() if tool_call else "tool desconhecida"
+        explanation = f"\n\n{tool_call.explanation}" if tool_call and tool_call.explanation else ""
+        return {
+            "needs_confirmation": True,
+            "confirmation_kind": "tool",
+            "extracted_command": f"native:{display}",
+            "ui_message": f"Confirmação necessária para ação nativa:\n\n{display}{explanation}",
+            "ui_status": "pending",
+            "is_complete": False,
+        }
+
+    def _executar_tool(self, state: AgentState) -> dict:
+        """Executa tool nativa ou resource snapshot."""
+        tool_call = state.get("tool_call")
+        if not tool_call:
+            return {
+                "ui_message": "Não foi possível executar: tool call ausente.",
+                "ui_status": "error",
+                "is_complete": True,
+            }
+
+        self._notify_step(f"Executando tool {tool_call.tool}.{tool_call.action}...")
+        if tool_call.tool == "resource_snapshot":
+            snapshot = self.resource_tool.run()
+            return {
+                "tool_result": snapshot,
+                "ui_message": f"Snapshot de recursos:\n\n{self._resource_json(snapshot)}",
+                "ui_status": "success",
+                "is_complete": True,
+            }
+
+        result = self.native_tool.run(tool_call.action, tool_call.args)
+        status = "success" if result.success else "warning"
+        message = self._format_tool_result(tool_call, result)
+        return {
+            "tool_result": result,
+            "extracted_command": f"native:{tool_call.display_name()}",
+            "ui_message": message,
+            "ui_status": status,
+            "is_complete": True,
         }
 
     def _solicitar_clarifica(self, state: AgentState) -> dict:
@@ -288,7 +442,7 @@ class AgentGraph:
     def _bloquear_cmd(self, state: AgentState) -> dict:
         """Bloqueia o comando e informa o motivo."""
         safety = state.get("safety_result")
-        reason = safety.reason if safety else "Motivo desconhecido"
+        reason = safety.reason if safety else state.get("blocked_reason", "Motivo desconhecido")
         pattern = safety.matched_pattern if safety else ""
 
         msg = f"🚫 Comando bloqueado por segurança: {reason}"
@@ -301,6 +455,13 @@ class AgentGraph:
             "blocked_reason": reason,
             "is_complete": True,
         }
+
+    @staticmethod
+    def _format_tool_result(tool_call: ToolCall, result: NativeToolResult) -> str:
+        prefix = tool_call.explanation or f"Tool nativa: {tool_call.action}"
+        if result.success:
+            return f"{prefix}\n\nResultado:\n{result.to_json()}"
+        return f"{prefix}\n\nFalha controlada:\n{result.to_json()}"
 
     def _preparar_confirmacao(self, state: AgentState) -> dict:
         """Prepara o estado para solicitar confirmação do usuário."""
@@ -403,23 +564,53 @@ class AgentGraph:
         llm_response = state.get("llm_response")
         extracted = state.get("extracted_command")
         execution = state.get("execution_result")
+        tool_result = state.get("tool_result")
         confirmed = state.get("user_confirmed", False)
+        stdout = execution.stdout if execution else self._tool_stdout(tool_result)
+        stderr = execution.stderr if execution else None
+        exit_code = execution.exit_code if execution else self._tool_exit_code(tool_result)
 
         self.db.save_command(
             user_input=user_input,
             llm_response=llm_response,
             extracted_command=extracted,
-            stdout=execution.stdout if execution else None,
-            stderr=execution.stderr if execution else None,
-            exit_code=execution.exit_code if execution else None,
+            stdout=stdout,
+            stderr=stderr,
+            exit_code=exit_code,
             confirmed=confirmed,
         )
+
+        if not state.get("needs_confirmation", False):
+            self.db.remember_interaction(
+                user_input=user_input,
+                extracted_command=extracted,
+                stdout=stdout,
+                stderr=stderr,
+                exit_code=exit_code,
+                confirmed=confirmed,
+            )
         # Preservar is_complete=False se veio de preparar_confirmacao
         # para que a UI consiga abrir o modal de confirmação
         if state.get("needs_confirmation", False):
             log.debug("Confirmação pendente — preservando is_complete=False.")
             return {}
         return {"is_complete": True}
+
+    @staticmethod
+    def _tool_stdout(tool_result: NativeToolResult | dict[str, Any] | None) -> str | None:
+        if tool_result is None:
+            return None
+        if isinstance(tool_result, NativeToolResult):
+            return tool_result.to_json()
+        return AgentGraph._resource_json(tool_result)
+
+    @staticmethod
+    def _tool_exit_code(tool_result: NativeToolResult | dict[str, Any] | None) -> int | None:
+        if tool_result is None:
+            return None
+        if isinstance(tool_result, NativeToolResult):
+            return 0 if tool_result.success else 1
+        return 0
 
     # ─── Funções de Roteamento (Edges Condicionais) ──────────────────────────
 
@@ -429,12 +620,22 @@ class AgentGraph:
             return "error"
         return "success"
 
-    def _check_extraction(self, state: AgentState) -> Literal["valid", "invalid"]:
+    def _check_extraction(self, state: AgentState) -> Literal["tool", "valid", "invalid"]:
         """Verifica se a extração do comando foi bem-sucedida."""
+        if state.get("tool_call"):
+            return "tool"
         extraction = state.get("extraction")
         if extraction and extraction.success:
             return "valid"
         return "invalid"
+
+    def _check_tool_safety(self, state: AgentState) -> Literal["read_only", "needs_confirmation", "blocked"]:
+        """Roteia tool calls conforme permissividade."""
+        if state.get("blocked_reason"):
+            return "blocked"
+        if state.get("tool_needs_confirmation", False):
+            return "needs_confirmation"
+        return "read_only"
 
     def _check_safety(self, state: AgentState) -> Literal["read_only", "needs_confirmation", "blocked"]:
         """Roteia baseado no resultado da validação de segurança."""
@@ -499,6 +700,10 @@ class AgentGraph:
 
         return cast(AgentState, result)
 
+    def get_resource_snapshot(self) -> dict[str, Any]:
+        """Exposto para a UI atualizar indicadores sem acionar o LLM."""
+        return self.resource_tool.run()
+
     def execute_confirmed(self, state: AgentState) -> AgentState:
         """
         Executa um comando que foi confirmado pelo usuário.
@@ -510,6 +715,9 @@ class AgentGraph:
         Returns:
             Estado atualizado com o resultado da execução.
         """
+        if state.get("tool_call"):
+            return self._execute_confirmed_tool(state)
+
         user_input = state.get("user_input", "")
         retry_count = 0
 
@@ -581,6 +789,19 @@ class AgentGraph:
                     new_response = self.llm.invoke(SYSTEM_PROMPT, full_message)
                     new_extraction = extract_command(new_response)
                     if new_extraction.success:
+                        safety = self.security.validate(new_extraction.command)
+                        if safety.category == CommandCategory.BLOCKED:
+                            state["ui_message"] = f"Retentativa bloqueada por segurança: {safety.reason}"
+                            state["ui_status"] = "blocked"
+                            break
+                        if safety.category == CommandCategory.NEEDS_CONFIRMATION:
+                            state["ui_message"] = (
+                                "A retentativa gerou um novo comando que precisa de nova confirmação:\n\n"
+                                f"$ {new_extraction.command}\n\n{safety.reason}"
+                            )
+                            state["ui_status"] = "pending"
+                            state["needs_confirmation"] = True
+                            break
                         state["extracted_command"] = new_extraction.command
                         state["llm_response"] = new_response
                     else:
@@ -603,5 +824,59 @@ class AgentGraph:
             exit_code=result.exit_code,
             confirmed=True,
         )
+        self.db.remember_interaction(
+            user_input=state.get("user_input", ""),
+            extracted_command=state.get("extracted_command", ""),
+            stdout=result.stdout,
+            stderr=result.stderr,
+            exit_code=result.exit_code,
+            confirmed=True,
+        )
 
+        return state
+
+    def _execute_confirmed_tool(self, state: AgentState) -> AgentState:
+        """Executa tool nativa mutável já confirmada."""
+        tool_call = state.get("tool_call")
+        if not tool_call:
+            state["ui_message"] = "Tool call ausente."
+            state["ui_status"] = "error"
+            state["is_complete"] = True
+            return state
+
+        self._notify_step(f"Executando tool confirmada {tool_call.tool}.{tool_call.action}...")
+        if tool_call.tool == "resource_snapshot":
+            snapshot = self.resource_tool.run()
+            state["tool_result"] = snapshot
+            state["ui_message"] = f"Snapshot de recursos:\n\n{self._resource_json(snapshot)}"
+            state["ui_status"] = "success"
+        else:
+            result = self.native_tool.run(tool_call.action, tool_call.args)
+            state["tool_result"] = result
+            state["ui_message"] = self._format_tool_result(tool_call, result)
+            state["ui_status"] = "success" if result.success else "warning"
+
+        state["user_confirmed"] = True
+        state["is_complete"] = True
+        extracted = f"native:{tool_call.display_name()}"
+        state["extracted_command"] = extracted
+        stdout = self._tool_stdout(state.get("tool_result"))
+        exit_code = self._tool_exit_code(state.get("tool_result"))
+        self.db.save_command(
+            user_input=state.get("user_input", ""),
+            llm_response=state.get("llm_response"),
+            extracted_command=extracted,
+            stdout=stdout,
+            stderr=None,
+            exit_code=exit_code,
+            confirmed=True,
+        )
+        self.db.remember_interaction(
+            user_input=state.get("user_input", ""),
+            extracted_command=extracted,
+            stdout=stdout,
+            stderr=None,
+            exit_code=exit_code,
+            confirmed=True,
+        )
         return state

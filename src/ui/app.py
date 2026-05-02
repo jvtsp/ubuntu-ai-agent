@@ -12,7 +12,7 @@ import customtkinter as ctk
 from src.agent.graph import AgentGraph, AgentState
 from src.agent.llm import LLMClient
 from src.logger import get_logger
-from src.ui.components import ConfirmationModal, InputField, LogArea, StatusIndicator
+from src.ui.components import YARU, ConfirmationModal, InputField, LogArea, ResourceStrip, StatusIndicator
 
 log = get_logger("ui.app")
 
@@ -46,8 +46,8 @@ class UbuntuAgentApp(ctk.CTk):
         log.info("Inicializando janela principal.")
 
         # ─── Configuração da Janela ──────────────────────────────────────────────
-        self.width = self.ui_config.get("width", 700)
-        self.title("🐧 Ubuntu Agent")
+        self.width = self.ui_config.get("width", 760)
+        self.title("Ubuntu Agent")
         self.resizable(True, True)
         self.minsize(400, 80)
 
@@ -69,8 +69,8 @@ class UbuntuAgentApp(ctk.CTk):
         y = int(self.winfo_screenheight() * 0.2)  # 20% do topo da tela para a barra de busca
 
         # Alturas da UI
-        self._base_height = 80  # Barra inicial
-        self._expanded_height = 450  # Janela expandida
+        self._base_height = 92  # Barra inicial
+        self._expanded_height = 520  # Janela expandida
 
         self.geometry(f"{self.width}x{self._base_height}+{x}+{y}")
         self._x_pos = x
@@ -83,6 +83,7 @@ class UbuntuAgentApp(ctk.CTk):
 
         # ─── Construir Interface ─────────────────────────────────────────────
         self._build_ui()
+        self._schedule_resource_refresh()
 
         # ─── Bindings ────────────────────────────────────────────────────────
         self.bind("<Escape>", lambda e: self.iconify())  # Minimizar com Esc
@@ -106,9 +107,10 @@ class UbuntuAgentApp(ctk.CTk):
         # Container principal
         self.main_frame = ctk.CTkFrame(
             self,
-            corner_radius=16,
+            corner_radius=8,
             border_width=1,
-            fg_color=("gray90", "gray10"),
+            border_color=(YARU["border_light"], YARU["border_dark"]),
+            fg_color=(YARU["surface_light"], YARU["surface_dark"]),
         )
         self.main_frame.pack(fill="both", expand=True, padx=2, pady=2)
 
@@ -118,42 +120,61 @@ class UbuntuAgentApp(ctk.CTk):
 
         # --- Componentes (Header, Log, Footer, Input) ---
 
-        # Header com título e status
+        # Header com título, status e ações
         self.header = ctk.CTkFrame(self.content_container, fg_color="transparent")
 
+        title_box = ctk.CTkFrame(self.header, fg_color="transparent")
+        title_box.pack(side="left", fill="x", expand=True)
+
         title = ctk.CTkLabel(
-            self.header,
-            text="🐧 Ubuntu Agent",
-            font=ctk.CTkFont(family=self.font_family, size=15, weight="bold"),
+            title_box,
+            text="Ubuntu Agent",
+            font=ctk.CTkFont(family=self.font_family, size=16, weight="bold"),
+            anchor="w",
         )
-        title.pack(side="left")
+        title.pack(fill="x", anchor="w")
+
+        subtitle = ctk.CTkLabel(
+            title_box,
+            text="co-operador sysadmin local",
+            font=ctk.CTkFont(family=self.font_family, size=10),
+            text_color=(YARU["text_muted_light"], YARU["text_muted_dark"]),
+            anchor="w",
+        )
+        subtitle.pack(fill="x", anchor="w")
 
         clear_btn = ctk.CTkButton(
             self.header,
-            text="🗑",
-            width=30,
-            height=25,
-            corner_radius=8,
+            text="Limpar",
+            width=64,
+            height=30,
+            corner_radius=6,
             fg_color="transparent",
-            font=ctk.CTkFont(size=14),
+            border_width=1,
+            border_color=(YARU["border_light"], YARU["border_dark"]),
+            text_color=(YARU["text_muted_light"], YARU["text_muted_dark"]),
+            font=ctk.CTkFont(family=self.font_family, size=11),
             command=self._clear_log,
         )
         clear_btn.pack(side="right", padx=(5, 0))
 
         settings_btn = ctk.CTkButton(
             self.header,
-            text="⚙",
-            width=30,
-            height=25,
-            corner_radius=8,
-            fg_color="transparent",
-            font=ctk.CTkFont(size=14),
+            text="Ajustes",
+            width=70,
+            height=30,
+            corner_radius=6,
+            fg_color=(YARU["accent"], "#FF6B35"),
+            hover_color=(YARU["accent_hover"], "#E95420"),
+            font=ctk.CTkFont(family=self.font_family, size=11, weight="bold"),
             command=self._open_settings,
         )
         settings_btn.pack(side="right", padx=(5, 0))
 
         self.status = StatusIndicator(self.header)
         self.status.pack(side="right")
+
+        self.resource_strip = ResourceStrip(self.content_container, font_family=self.font_family)
 
         # Log Area
         self.log_area = LogArea(
@@ -167,24 +188,24 @@ class UbuntuAgentApp(ctk.CTk):
         self.footer = ctk.CTkFrame(self.content_container, fg_color="transparent", height=20)
         hint = ctk.CTkLabel(
             self.footer,
-            text="Zoom: Ctrl + / -  |  Enter ↵ enviar",
+            text="Enter envia · Esc minimiza · Ctrl +/- ajusta zoom",
             font=ctk.CTkFont(size=10),
-            text_color=("gray50", "gray60"),
+            text_color=(YARU["text_muted_light"], YARU["text_muted_dark"]),
         )
         hint.pack(side="left")
 
         self.token_label = ctk.CTkLabel(
             self.footer,
-            text="📊 Tokens: 0",
+            text="Tokens: 0",
             font=ctk.CTkFont(size=10),
-            text_color=("gray50", "gray60"),
+            text_color=(YARU["text_muted_light"], YARU["text_muted_dark"]),
         )
         self.token_label.pack(side="right")
 
         # Input Field
         self.input_field = InputField(
             self.content_container,
-            placeholder="Digite um comando em português...",
+            placeholder="Peça um diagnóstico, ajuste de serviço, rede ou pacote...",
             on_submit=self._on_submit,
             font_family=self.font_family,
             font_size=self.font_size,
@@ -203,6 +224,7 @@ class UbuntuAgentApp(ctk.CTk):
 
             # Empacota no formato chat
             self.header.pack(fill="x", side="top", padx=12, pady=(5, 0))
+            self.resource_strip.pack(fill="x", side="top", padx=12, pady=(8, 10))
             self.footer.pack(fill="x", side="bottom", padx=12, pady=(2, 5))
             self.input_field.pack(fill="x", side="bottom", padx=12, pady=(0, 5))
             # O LogArea fará o pack dele mesmo no _update_visibility
@@ -234,7 +256,11 @@ class UbuntuAgentApp(ctk.CTk):
         settings_window.resizable(False, False)
         settings_window.transient(self)
 
-        frame = ctk.CTkFrame(settings_window, fg_color="transparent")
+        frame = ctk.CTkFrame(
+            settings_window,
+            fg_color=(YARU["surface_light"], YARU["surface_dark"]),
+            corner_radius=8,
+        )
         frame.pack(fill="both", expand=True, padx=10, pady=10)
 
         self._build_settings_tab(frame)
@@ -300,7 +326,7 @@ class UbuntuAgentApp(ctk.CTk):
             font=ctk.CTkFont(family=self.font_family, size=12),
             height=35,
             corner_radius=8,
-            fg_color=("gray95", "gray15"),
+            fg_color=(YARU["panel_light"], YARU["panel_dark"]),
         )
         endpoint_entry.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
@@ -488,7 +514,7 @@ class UbuntuAgentApp(ctk.CTk):
 
             # Conta tokens de entrada
             in_tokens = self.llm.count_tokens(user_input)
-            self.after(0, lambda: self.token_label.configure(text=f"📊 Tokens: {in_tokens} In | ... Out"))
+            self.after(0, lambda: self.token_label.configure(text=f"Tokens: {in_tokens} In | ... Out"))
 
             stream_state: dict[str, object] = {"in_code": False, "buffer": ""}
 
@@ -511,7 +537,7 @@ class UbuntuAgentApp(ctk.CTk):
 
             # Atualiza tokens totais
             out_tokens = self.llm.count_tokens(result.get("llm_response", ""))
-            self.after(0, lambda: self.token_label.configure(text=f"📊 Tokens: {in_tokens} In | {out_tokens} Out"))
+            self.after(0, lambda: self.token_label.configure(text=f"Tokens: {in_tokens} In | {out_tokens} Out"))
 
             # Adiciona uma quebra de linha ao final do streaming
             self.after(0, lambda: self.log_area.append_text("\n"))
@@ -633,6 +659,24 @@ class UbuntuAgentApp(ctk.CTk):
         """Agenda verificações periódicas do status do LLM."""
         self._check_llm_status()
         self.after(30000, self._schedule_health_check)
+
+    def _schedule_resource_refresh(self) -> None:
+        """Agenda atualização read-only dos indicadores de recursos."""
+        self._refresh_resources()
+        self.after(5000, self._schedule_resource_refresh)
+
+    def _refresh_resources(self) -> None:
+        """Atualiza a faixa de recursos em background."""
+
+        def read_snapshot():
+            try:
+                snapshot = self.agent.get_resource_snapshot()
+            except Exception as e:
+                log.debug("Snapshot de recursos indisponível: %s", str(e)[:120])
+                return
+            self.after(0, lambda: self.resource_strip.update_snapshot(snapshot))
+
+        threading.Thread(target=read_snapshot, daemon=True).start()
 
     def _fade_in(self) -> None:
         """Animação sutil de fade-in ao aparecer."""

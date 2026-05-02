@@ -15,15 +15,12 @@ import signal
 import sys
 import threading
 
-import pystray
 import yaml
 from PIL import Image, ImageDraw
 
 # Adicionar diretório raiz ao path
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, ROOT_DIR)
-
-from src.logger import get_logger, setup_logging
 
 
 def load_config(config_path: str = "config.yaml") -> dict:
@@ -83,7 +80,7 @@ def setup_hotkey(app, config: dict) -> None:
     try:
         from pynput import keyboard as pynput_kb
 
-        KEY_MAP = {
+        key_map = {
             "super": pynput_kb.Key.cmd,
             "ctrl": pynput_kb.Key.ctrl,
             "alt": pynput_kb.Key.alt,
@@ -95,8 +92,8 @@ def setup_hotkey(app, config: dict) -> None:
         hotkey_keys = set()
         for part in parts:
             part = part.strip()
-            if part in KEY_MAP:
-                hotkey_keys.add(KEY_MAP[part])
+            if part in key_map:
+                hotkey_keys.add(key_map[part])
             elif len(part) == 1:
                 hotkey_keys.add(pynput_kb.KeyCode.from_char(part))
 
@@ -129,9 +126,11 @@ def setup_hotkey(app, config: dict) -> None:
 
 def setup_tray(app) -> None:
     """Configura o ícone na bandeja do sistema (System Tray)."""
+    import pystray
+
     def create_image():
         # Cria um ícone simples com um círculo azul
-        image = Image.new('RGB', (64, 64), color=("#1e1e2e"))
+        image = Image.new("RGB", (64, 64), color=("#1e1e2e"))
         draw = ImageDraw.Draw(image)
         draw.ellipse((16, 16, 48, 48), fill=("#89b4fa"))
         return image
@@ -146,7 +145,7 @@ def setup_tray(app) -> None:
 
     menu = pystray.Menu(
         pystray.MenuItem("Mostrar/Ocultar", on_activate, default=True),
-        pystray.MenuItem("Sair do Ubuntu Agent", on_quit)
+        pystray.MenuItem("Sair do Ubuntu Agent", on_quit),
     )
 
     icon = pystray.Icon("UbuntuAgent", create_image(), "Ubuntu Agent", menu)
@@ -158,6 +157,8 @@ def setup_tray(app) -> None:
 
 def main() -> None:
     """Função principal: inicializa e executa o Ubuntu Agent."""
+    from src.logger import get_logger, setup_logging
+
     # Parsear argumentos
     parser = argparse.ArgumentParser(description="Ubuntu Agent - Assistente de comandos")
     parser.add_argument(
@@ -186,6 +187,7 @@ def main() -> None:
     if args.toggle:
         try:
             from src.system.dbus_service import send_toggle_signal
+
             if send_toggle_signal():
                 log.info("Sinal enviado para instância principal via D-Bus.")
                 sys.exit(0)
@@ -198,45 +200,51 @@ def main() -> None:
 
     # Banco de dados
     from src.storage.database import Database
+
     db_path = config.get("history", {}).get("db_path", "data/history.db")
-    
+
     # Suporte a Snap: se o caminho for relativo e SNAP_USER_DATA existir, gravar lá
     if not os.path.isabs(db_path):
         if "SNAP_USER_DATA" in os.environ:
             db_full_path = os.path.join(os.environ["SNAP_USER_DATA"], db_path)
         else:
             db_full_path = os.path.join(ROOT_DIR, db_path)
-        
+
         os.makedirs(os.path.dirname(db_full_path), exist_ok=True)
     else:
         db_full_path = db_path
-        
+
     db = Database(db_full_path)
     log.info("Banco de dados inicializado: %s", db_full_path)
 
     # Vault (Cofre)
     from src.storage.vault import Vault
+
     vault = Vault()
     log.info("Cofre de credenciais inicializado (in-memory).")
 
     # Cliente LLM
     from src.agent.llm import LLMClient
+
     llm_config = config.get("llm", {})
     llm_client = LLMClient(llm_config)
-    log.info("Cliente LLM configurado: model=%s, base_url=%s", llm_config.get('model'), llm_config.get('base_url'))
+    log.info("Cliente LLM configurado: model=%s, base_url=%s", llm_config.get("model"), llm_config.get("base_url"))
 
     # Validador de segurança
     from src.executor.safety import SecurityValidator
+
     security_config = config.get("security", {})
     security = SecurityValidator(security_config)
 
     # Grafo do agente
     from src.agent.graph import AgentGraph
+
     agent = AgentGraph(llm_client, security, db, config, vault)
     log.info("Grafo do agente construído.")
 
     # ─── Criar e configurar a UI ─────────────────────────────────────────────
     from src.ui.app import UbuntuAgentApp
+
     app = UbuntuAgentApp(agent, llm_client, config)
     log.info("Interface gráfica inicializada.")
 
@@ -246,6 +254,7 @@ def main() -> None:
     # Iniciar D-Bus Service para Wayland Single Instance
     try:
         from src.system.dbus_service import start_dbus_service
+
         start_dbus_service(lambda: app.after(0, app.toggle_window))
     except Exception as e:
         log.warning(f"Não foi possível iniciar o serviço D-Bus: {e}")

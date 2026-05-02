@@ -5,9 +5,12 @@ Gerencia o banco de dados de histórico de comandos executados,
 fornecendo contexto conversacional para o LLM.
 """
 
+import json
 import os
+import re
 import sqlite3
 from datetime import datetime
+from typing import Any
 
 
 class Database:
@@ -35,7 +38,7 @@ class Database:
         self._init_db()
 
     def _init_db(self) -> None:
-        """Cria a tabela de comandos caso não exista."""
+        """Cria as tabelas de histórico e memória caso não existam."""
         with self._connect() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS commands (
@@ -48,6 +51,16 @@ class Database:
                     stderr TEXT,
                     exit_code INTEGER,
                     confirmed INTEGER DEFAULT 0
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS memory_items (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    metadata TEXT,
+                    importance INTEGER DEFAULT 1
                 )
             """)
             conn.commit()
@@ -143,3 +156,158 @@ class Database:
             cursor = conn.execute("DELETE FROM commands")
             conn.commit()
             return cursor.rowcount
+
+    def save_memory(
+        self,
+        kind: str,
+        content: str,
+        metadata: dict[str, Any] | None = None,
+        importance: int = 1,
+    ) -> int:
+        """
+        Salva um item de memória operacional de curto/médio prazo.
+
+        Args:
+            kind: Tipo semântico da memória (ex: package, service, interaction).
+            content: Texto conciso que será reinjetado no prompt.
+            metadata: Dados auxiliares serializados em JSON.
+            importance: Peso simples para priorizar lembranças.
+
+        Returns:
+            ID do item inserido.
+        """
+        timestamp = datetime.now().isoformat()
+        metadata_json = json.dumps(metadata or {}, ensure_ascii=False, sort_keys=True)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO memory_items (timestamp, kind, content, metadata, importance)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (timestamp, kind, content, metadata_json, importance),
+            )
+            conn.commit()
+            return cursor.lastrowid  # type: ignore[return-value]
+
+    def get_recent_memories(self, limit: int = 8) -> list[dict]:
+        """
+        Recupera memórias recentes priorizando importância e recência.
+
+        Args:
+            limit: Número máximo de itens.
+
+        Returns:
+            Lista em ordem cronológica para leitura natural no prompt.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT timestamp, kind, content, metadata, importance
+                FROM memory_items
+                ORDER BY importance DESC, id DESC
+                LIMIT ?
+                """,
+                (limit,),
+            ).fetchall()
+
+        memories = []
+        for row in reversed(rows):
+            item = dict(row)
+            try:
+                item["metadata"] = json.loads(item.get("metadata") or "{}")
+            except json.JSONDecodeError:
+                item["metadata"] = {}
+            memories.append(item)
+        return memories
+
+    def clear_memory(self) -> int:
+        """
+        Limpa a memória operacional.
+
+        Returns:
+            Número de registros removidos.
+        """
+        with self._connect() as conn:
+            cursor = conn.execute("DELETE FROM memory_items")
+            conn.commit()
+            return cursor.rowcount
+
+    def remember_interaction(
+        self,
+        user_input: str,
+        extracted_command: str | None = None,
+        stdout: str | None = None,
+        stderr: str | None = None,
+        exit_code: int | None = None,
+        confirmed: bool = False,
+    ) -> int | None:
+        """
+        Gera uma lembrança curta a partir de uma interação bem-sucedida.
+
+        A heurística é propositalmente conservadora e local: registra fatos úteis
+        como instalações, ações em serviços e comandos confirmados recentes.
+        """
+        if exit_code not in (0, None):
+            return None
+
+        command = extracted_command or ""
+        combined = f"{user_input}\n{command}".strip()
+        if not combined:
+            return None
+
+        package = self._extract_installed_package(command)
+        if package:
+            return self.save_memory(
+                "package",
+                f"O usuário instalou ou solicitou instalação de {package}.",
+                {
+                    "package": package,
+                    "command": command,
+                    "stdout": (stdout or "")[:300],
+                },
+                importance=4,
+            )
+
+        service = self._extract_service_name(command)
+        if service:
+            return self.save_memory(
+                "service",
+                f"Interação recente envolveu o serviço {service}.",
+                {"service": service, "command": command, "stderr": (stderr or "")[:300]},
+                importance=3,
+            )
+
+        if confirmed or command.startswith("native:"):
+            summary = combined.replace("\n", " -> ")
+            return self.save_memory(
+                "interaction",
+                f"Interação recente: {summary[:220]}",
+                {"command": command, "confirmed": confirmed},
+                importance=1,
+            )
+
+        return None
+
+    @staticmethod
+    def _extract_installed_package(command: str) -> str:
+        patterns = [
+            r"\bapt(?:-get)?\s+install\s+-?y?\s*([a-zA-Z0-9_.:+-]+)",
+            r"\bsnap\s+install\s+([a-zA-Z0-9_.:+-]+)",
+            r"\bflatpak\s+install\s+(?:-y\s+)?(?:\S+\s+)?([a-zA-Z0-9_.:+-]+)",
+        ]
+        for pattern in patterns:
+            match = re.search(pattern, command)
+            if match:
+                return match.group(1)
+        return ""
+
+    @staticmethod
+    def _extract_service_name(command: str) -> str:
+        match = re.search(r"\bsystemctl\s+(?:status|start|stop|restart|reload)\s+([a-zA-Z0-9_.@+-]+)", command)
+        if match:
+            return match.group(1)
+        if command.startswith("native:dbus_native."):
+            service_match = re.search(r'"service":\s*"([^"]+)"', command)
+            if service_match:
+                return service_match.group(1)
+        return ""

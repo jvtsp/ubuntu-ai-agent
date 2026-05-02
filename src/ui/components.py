@@ -10,6 +10,24 @@ from collections.abc import Callable
 
 import customtkinter as ctk
 
+YARU = {
+    "accent": "#E95420",
+    "accent_hover": "#C64600",
+    "aubergine": "#77216F",
+    "surface_light": "#F7F7F7",
+    "surface_dark": "#1E1E1E",
+    "panel_light": "#FFFFFF",
+    "panel_dark": "#2A2A2A",
+    "border_light": "#D8D8D8",
+    "border_dark": "#3D3D3D",
+    "text_muted_light": "#5E5E5E",
+    "text_muted_dark": "#B7B7B7",
+    "success": "#0E8420",
+    "warning": "#C98500",
+    "error": "#C7162B",
+    "info": "#335280",
+}
+
 
 class InputField(ctk.CTkFrame):
     """Campo de input estilizado com placeholder."""
@@ -45,14 +63,15 @@ class InputField(ctk.CTkFrame):
             height=45,
             corner_radius=8,
             border_width=1,
-            fg_color=("gray95", "gray15"),
+            border_color=(YARU["border_light"], YARU["border_dark"]),
+            fg_color=(YARU["panel_light"], YARU["panel_dark"]),
         )
 
         self.prompt_label = ctk.CTkLabel(
             self,
-            text="user@agent:~$",
+            text="sysadmin@ubuntu:~$",
             font=ctk.CTkFont(family=font_family, size=font_size, weight="bold"),
-            text_color=("#2ea043", "#3fb950"),  # Ubuntu green adaptable
+            text_color=(YARU["accent"], "#FF8C5A"),
         )
 
         self.prompt_label.pack(side="left", padx=(10, 5), pady=2)
@@ -83,9 +102,9 @@ class StatusIndicator(ctk.CTkFrame):
 
     # Cores para cada status adaptáveis ao tema (Light, Dark)
     COLORS: typing.ClassVar[dict[str, tuple[str, str]]] = {
-        "online": ("#198754", "#2ea043"),  # Verde
-        "processing": ("#ffc107", "#e3b341"),  # Amarelo
-        "offline": ("#dc3545", "#f85149"),  # Vermelho
+        "online": (YARU["success"], "#26A269"),
+        "processing": (YARU["warning"], "#F6D32D"),
+        "offline": (YARU["error"], "#F66151"),
         "idle": ("gray50", "gray60"),  # Cinza
     }
 
@@ -141,12 +160,12 @@ class LogArea(ctk.CTkFrame):
     # Teria que atualizar no change do tema. Para simplificar e manter robusto,
     # usamos cores que funcionam bem em fundos claros e escuros ou tons intermediários.
     STATUS_COLORS: typing.ClassVar[dict[str, str]] = {
-        "success": "#2ea043",
-        "error": "#f85149",
-        "warning": "#d29922",
-        "blocked": "#f85149",
-        "pending": "#58a6ff",
-        "info": "#8b949e",
+        "success": YARU["success"],
+        "error": YARU["error"],
+        "warning": YARU["warning"],
+        "blocked": YARU["error"],
+        "pending": YARU["accent"],
+        "info": YARU["info"],
     }
 
     def __init__(
@@ -168,8 +187,10 @@ class LogArea(ctk.CTkFrame):
         """
         super().__init__(
             master,
-            fg_color=("gray95", "gray15"),
-            corner_radius=12,
+            fg_color=(YARU["panel_light"], YARU["panel_dark"]),
+            border_color=(YARU["border_light"], YARU["border_dark"]),
+            border_width=1,
+            corner_radius=8,
             **kwargs,
         )
 
@@ -181,15 +202,15 @@ class LogArea(ctk.CTkFrame):
             fg_color="transparent",
             wrap="word",
             height=0,
-            corner_radius=12,
+            corner_radius=8,
             activate_scrollbars=True,
         )
         self.textbox.pack(fill="both", expand=True, padx=8, pady=8)
 
         # Configurar tags para cores
         self.textbox.tag_config("thought", foreground="#888888")
-        self.textbox.tag_config("code", foreground="#e95420")
-        self.textbox.tag_config("system", foreground="#77216f")
+        self.textbox.tag_config("code", foreground=YARU["accent"])
+        self.textbox.tag_config("system", foreground=YARU["aubergine"])
         for status, color in self.STATUS_COLORS.items():
             self.textbox.tag_config(status, foreground=color)
 
@@ -255,6 +276,70 @@ class LogArea(ctk.CTkFrame):
         self.pack_forget()
 
 
+class ResourceStrip(ctk.CTkFrame):
+    """Faixa compacta com indicadores read-only de recursos da máquina."""
+
+    def __init__(self, master: ctk.CTkBaseClass, font_family: str = "JetBrains Mono", **kwargs) -> None:
+        super().__init__(
+            master,
+            fg_color=(YARU["surface_light"], "#242424"),
+            border_color=(YARU["border_light"], YARU["border_dark"]),
+            border_width=1,
+            corner_radius=8,
+            **kwargs,
+        )
+        self._labels: dict[str, ctk.CTkLabel] = {}
+        for key, title in {
+            "cpu": "CPU --",
+            "memory": "RAM --",
+            "disk": "Disk --",
+            "network": "Net --",
+        }.items():
+            label = ctk.CTkLabel(
+                self,
+                text=title,
+                font=ctk.CTkFont(family=font_family, size=11),
+                text_color=(YARU["text_muted_light"], YARU["text_muted_dark"]),
+                anchor="w",
+            )
+            label.pack(side="left", padx=10, pady=5)
+            self._labels[key] = label
+
+    def update_snapshot(self, snapshot: dict) -> None:
+        """Atualiza os indicadores a partir do JSON da ResourceMonitorTool."""
+        cpu = snapshot.get("cpu", {})
+        memory = snapshot.get("memory", {})
+        disk = snapshot.get("disk_io", {})
+        network = snapshot.get("network", {})
+
+        self._labels["cpu"].configure(text=f"CPU {float(cpu.get('percent') or 0):.0f}%")
+        self._labels["memory"].configure(text=f"RAM {float(memory.get('percent') or 0):.0f}%")
+        self._labels["disk"].configure(
+            text=f"Disk R/W {self._bytes(disk.get('read_bytes'))}/{self._bytes(disk.get('write_bytes'))}"
+        )
+        self._labels["network"].configure(
+            text=f"Net {self._bytes(network.get('bytes_recv'))}/{self._bytes(network.get('bytes_sent'))}"
+        )
+
+    @staticmethod
+    def _bytes(value: object) -> str:
+        if value is None:
+            amount = 0.0
+        elif isinstance(value, int | float | str):
+            amount = float(value or 0)
+        else:
+            amount = 0.0
+        try:
+            amount = float(amount)
+        except (TypeError, ValueError):
+            amount = 0.0
+        for unit in ["B", "KB", "MB", "GB", "TB"]:
+            if amount < 1024 or unit == "TB":
+                return f"{amount:.0f}{unit}"
+            amount /= 1024
+        return "0B"
+
+
 class ConfirmationModal(ctk.CTkToplevel):
     """Modal de confirmação para comandos que requerem aprovação."""
 
@@ -295,7 +380,7 @@ class ConfirmationModal(ctk.CTkToplevel):
             self,
             text="⚠ Confirmação Necessária",
             font=ctk.CTkFont(family=font_family, size=16, weight="bold"),
-            text_color=("#d29922", "#e3b341"),  # Amarelo/Laranja
+            text_color=(YARU["warning"], "#F6D32D"),
         )
         title_label.pack(pady=(20, 10))
 
@@ -312,8 +397,10 @@ class ConfirmationModal(ctk.CTkToplevel):
         # Comando
         cmd_frame = ctk.CTkFrame(
             self,
-            fg_color=("gray90", "gray10"),
-            corner_radius=10,
+            fg_color=(YARU["surface_light"], YARU["surface_dark"]),
+            border_color=(YARU["border_light"], YARU["border_dark"]),
+            border_width=1,
+            corner_radius=8,
         )
         cmd_frame.pack(fill="x", padx=20, pady=10)
 
@@ -321,7 +408,7 @@ class ConfirmationModal(ctk.CTkToplevel):
             cmd_frame,
             text=f"$ {command}",
             font=ctk.CTkFont(family=font_family, size=13),
-            text_color=("#0550ae", "#58a6ff"),  # Azul
+            text_color=(YARU["info"], "#99C1F1"),
             wraplength=490,
             justify="left",
         )
@@ -337,7 +424,7 @@ class ConfirmationModal(ctk.CTkToplevel):
             font=ctk.CTkFont(family=font_family, size=13),
             width=140,
             height=40,
-            corner_radius=10,
+            corner_radius=8,
             fg_color=("gray70", "gray30"),
             hover_color=("gray60", "gray40"),
             text_color=("black", "white"),
@@ -351,9 +438,9 @@ class ConfirmationModal(ctk.CTkToplevel):
             font=ctk.CTkFont(family=font_family, size=13, weight="bold"),
             width=140,
             height=40,
-            corner_radius=10,
-            fg_color=("#198754", "#2ea043"),
-            hover_color=("#157347", "#2c974b"),
+            corner_radius=8,
+            fg_color=(YARU["accent"], "#FF6B35"),
+            hover_color=(YARU["accent_hover"], "#E95420"),
             text_color="white",
             command=self._confirm,
         )

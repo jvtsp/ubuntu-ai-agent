@@ -88,3 +88,40 @@ class TestDatabase:
         history = db_in_memory.get_last_n(1)
         assert "Área de Trabalho" in history[0]["user_input"]
         assert "🐧" in history[0]["user_input"]
+
+
+class TestOperationalMemory:
+    def test_save_and_get_recent_memories(self, db_in_memory):
+        db_in_memory.save_memory("preference", "Usuário prefere apt.", {"scope": "packages"}, importance=2)
+        memories = db_in_memory.get_recent_memories(5)
+        assert len(memories) == 1
+        assert memories[0]["kind"] == "preference"
+        assert memories[0]["metadata"]["scope"] == "packages"
+
+    def test_remember_interaction_detects_apt_install(self, db_in_memory):
+        memory_id = db_in_memory.remember_interaction(
+            user_input="instale docker",
+            extracted_command="sudo apt install -y docker.io",
+            stdout="ok",
+            exit_code=0,
+            confirmed=True,
+        )
+        assert memory_id is not None
+        memories = db_in_memory.get_recent_memories(1)
+        assert "docker.io" in memories[0]["content"]
+
+    def test_remember_interaction_ignores_failed_commands(self, db_in_memory):
+        memory_id = db_in_memory.remember_interaction(
+            user_input="instale docker",
+            extracted_command="sudo apt install -y docker.io",
+            stderr="erro",
+            exit_code=1,
+            confirmed=True,
+        )
+        assert memory_id is None
+        assert db_in_memory.get_recent_memories(5) == []
+
+    def test_clear_memory(self, db_in_memory):
+        db_in_memory.save_memory("interaction", "teste")
+        assert db_in_memory.clear_memory() == 1
+        assert db_in_memory.get_recent_memories(5) == []

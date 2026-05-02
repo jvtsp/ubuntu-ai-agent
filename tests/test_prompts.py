@@ -2,7 +2,7 @@
 Testes para o módulo de prompts (agent/prompts.py).
 """
 
-from src.agent.prompts import EVALUATION_PROMPT, SYSTEM_PROMPT, build_context_messages
+from src.agent.prompts import EVALUATION_PROMPT, SYSTEM_PROMPT, build_context_messages, build_memory_context
 
 
 class TestSystemPrompt:
@@ -17,6 +17,10 @@ class TestSystemPrompt:
 
     def test_prompt_has_safety_rules(self):
         assert "destrutivo" in SYSTEM_PROMPT.lower() or "NUNCA" in SYSTEM_PROMPT
+
+    def test_prompt_mentions_native_tools(self):
+        assert "dbus_native" in SYSTEM_PROMPT
+        assert "resource_snapshot" in SYSTEM_PROMPT
 
 
 class TestEvaluationPrompt:
@@ -63,3 +67,14 @@ class TestBuildContextMessages:
         history = [{"user_input": "test"}]
         result = build_context_messages(history)
         assert "---" in result
+
+
+class TestBuildMemoryContext:
+    def test_empty_memory(self):
+        assert build_memory_context([]) == ""
+
+    def test_memory_context_contains_items(self):
+        memories = [{"kind": "package", "content": "O usuário instalou Docker."}]
+        result = build_memory_context(memories)
+        assert "Memória operacional" in result
+        assert "Docker" in result

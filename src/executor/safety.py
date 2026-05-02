@@ -6,6 +6,7 @@ em read-only, requer-confirmação ou bloqueado.
 """
 
 import re
+import shlex
 from dataclasses import dataclass
 from enum import Enum
 
@@ -193,23 +194,33 @@ class SecurityValidator:
         Returns:
             True se o comando for considerado somente leitura.
         """
-        # Remove pipes e analisa o primeiro comando
-        # Para comandos encadeados com &&, verifica cada um
-        parts = re.split(r"\s*&&\s*|\s*\|\|\s*", command)
+        # Redirecionamento de saída/heredoc altera estado ou cria arquivos.
+        if re.search(r">|<<", command):
+            return False
+
+        # Analisa cada etapa de pipelines e encadeamentos.
+        parts = re.split(r"\s*(?:&&|\|\||\||;)\s*", command)
 
         for part in parts:
             part = part.strip()
             if not part:
                 continue
 
-            # Ignora redirecionamentos de output no início
-            # Pega o primeiro "token real"
-            tokens = part.split()
+            try:
+                tokens = shlex.split(part)
+            except ValueError:
+                tokens = part.split()
             if not tokens:
                 continue
 
             # O primeiro token pode ser um path completo
             base_cmd = tokens[0].split("/")[-1]
+            if base_cmd == "sudo" and len(tokens) > 1:
+                base_cmd = tokens[1].split("/")[-1]
+                tokens = tokens[1:]
+
+            if self._has_mutating_read_only_flags(base_cmd, tokens[1:]):
+                return False
 
             # Verifica se está na lista de read-only
             # Também verifica combinações com o segundo token (ex: "apt list")
@@ -224,3 +235,11 @@ class SecurityValidator:
             return False
 
         return True
+
+    @staticmethod
+    def _has_mutating_read_only_flags(base_cmd: str, args: list[str]) -> bool:
+        """Bloqueia opções mutáveis em comandos que costumam ser read-only."""
+        if base_cmd == "find":
+            mutating_flags = {"-delete", "-exec", "-execdir", "-ok", "-okdir", "-fprint", "-fprint0", "-fprintf"}
+            return any(arg in mutating_flags for arg in args)
+        return False

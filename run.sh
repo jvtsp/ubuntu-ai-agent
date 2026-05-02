@@ -43,9 +43,9 @@ info "Python ${PY_VERSION} encontrado."
 # ─── Criar ambiente virtual ─────────────────────────────────────────────────
 if [[ ! -d "${VENV_DIR}" ]]; then
     info "Criando ambiente virtual em ${VENV_DIR}..."
-    if ! "${PYTHON}" -m venv "${VENV_DIR}" 2>/dev/null; then
+    if ! "${PYTHON}" -m venv --system-site-packages "${VENV_DIR}" 2>/dev/null; then
         warn "ensurepip não disponível. Criando venv sem pip..."
-        "${PYTHON}" -m venv --without-pip "${VENV_DIR}"
+        "${PYTHON}" -m venv --system-site-packages --without-pip "${VENV_DIR}"
     fi
 fi
 

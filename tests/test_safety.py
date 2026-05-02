@@ -222,3 +222,19 @@ class TestEvasionAttempts:
         assert result.category == CommandCategory.BLOCKED
         assert result.is_safe is False
         assert "subshell_or_backtick" in result.matched_pattern
+
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "echo owned > /tmp/ua-test",
+            "cat /etc/passwd > /tmp/passwd-copy",
+            "find . -delete",
+            "ls | rm arquivo.txt",
+            "grep x file | chmod 777 a",
+        ],
+    )
+    def test_mutating_read_only_shapes_are_not_read_only(self, security_config, command):
+        """Comandos com redirecionamento, pipe mutável ou flags mutáveis não são READ_ONLY."""
+        validator = SecurityValidator(security_config)
+        result = validator.validate(command)
+        assert result.category != CommandCategory.READ_ONLY

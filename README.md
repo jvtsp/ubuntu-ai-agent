@@ -17,6 +17,9 @@ Toda a inteligência roda **100% localmente** através do [Ollama](https://ollam
   - Comandos de mutação (como `apt install`, `rm`, `chmod`) exigem **confirmação explícita do usuário** em um modal seguro.
   - Blocklist nativa impede comandos destrutivos perigosos (ex: `rm -rf /`, `chmod -R 777`).
 - **Contexto e Memória:** O agente lembra dos últimos comandos enviados na mesma sessão (via banco de dados SQLite embutido).
+- **Consciência de Recursos:** Antes de rotear uma ação, o grafo coleta um snapshot *read-only* de CPU, RAM, I/O de disco e rede com `psutil`, permitindo evitar tarefas pesadas quando a máquina já está saturada.
+- **Memória Operacional:** Além do histórico bruto, o SQLite guarda fatos úteis de curto/médio prazo, como pacotes instalados e serviços manipulados recentemente.
+- **Ferramentas Nativas D-Bus:** Para serviços, rede, GNOME e status de pacotes, o agente prioriza tools nativas via `pydbus` antes de recorrer a Bash.
 - **Sem Interrupções:** Executa aplicativos gráficos com `nohup` em background para não travar o processo principal.
 - **UI Dinâmica e Responsiva:**
   - **Modo Spotlight:** O agente inicia em um formato minimalista (apenas uma barra de busca), focado na entrada do comando inicial.
@@ -32,10 +35,13 @@ O projeto utiliza **LangGraph** para criar um fluxo de execução determinístic
 
 1. **Input do Usuário:** Recebido via interface gráfica.
 2. **Contexto:** Injeção das variáveis de ambiente (`$DESKTOP`, `$DOCUMENTS`, etc.) baseadas na máquina do usuário local (`xdg-user-dir`).
-3. **LLM Router:** O modelo gera um bloco de código Markdown com o comando Bash.
-4. **Safety Validator:** Regex e análise estática classificam o comando como `READ_ONLY`, `NEEDS_CONFIRMATION` ou `BLOCKED`.
-5. **Executor:** Roda subprocessos de forma isolada, capturando `stdout` e `stderr`.
-6. **Evaluation Node:** Um segundo prompt avalia o `exit_code` e a saída. Se o resultado não satisfizer o objetivo inicial, o grafo faz um *loop* (máximo 2 vezes) com feedback do erro para o LLM gerar uma correção.
+3. **Resource Tool:** Snapshot JSON *read-only* de CPU, RAM, I/O de disco e rede é injetado no prompt.
+4. **Operational Memory:** Memórias recentes do SQLite são reinjetadas para manter continuidade da sessão.
+5. **LLM Router:** O modelo gera um bloco Markdown `tool` para ações nativas ou `bash` como fallback.
+6. **Native Tools:** Tools D-Bus executam leituras e ações nativas com degradação controlada quando o serviço alvo não responde.
+7. **Safety Validator:** Regex e análise estática classificam comandos Bash como `READ_ONLY`, `NEEDS_CONFIRMATION` ou `BLOCKED`.
+8. **Executor:** Roda subprocessos de forma isolada, capturando `stdout` e `stderr`.
+9. **Evaluation Node:** Um segundo prompt avalia o `exit_code` e a saída. Se o resultado não satisfizer o objetivo inicial, o grafo faz um *loop* (máximo 2 vezes) com feedback do erro para o LLM gerar uma correção.
 
 ---
 
@@ -45,7 +51,7 @@ O projeto utiliza **LangGraph** para criar um fluxo de execução determinístic
 - **Python:** 3.12+
 - **Dependências de Sistema:**
   - `python3-venv` e `python3-tk`
-  - `libdbus-1-dev`, `libgirepository1.0-dev` e `gir1.2-gtk-3.0` (para integração com o sistema)
+  - `python3-gi`, `libdbus-1-dev`, `libgirepository1.0-dev`, `gir1.2-gtk-3.0` e `gir1.2-networkmanager-1.0` (para integração D-Bus/GTK/NetworkManager)
 - **Motor de IA Local:** [Ollama](https://ollama.com/) instalado e rodando.
 
 ---
@@ -111,6 +117,8 @@ Se você enviar comandos que necessitam de `sudo`, o agente abrirá um cofre seg
 - [CustomTkinter](https://customtkinter.tomschimansky.com/)
 - [SQLite3](https://docs.python.org/3/library/sqlite3.html)
 - [Ollama](https://ollama.com/)
+- [psutil](https://psutil.readthedocs.io/) para leitura de recursos
+- [pydbus](https://github.com/LEW21/pydbus) para integração nativa D-Bus
 
 ---
 
