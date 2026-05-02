@@ -46,8 +46,8 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y python3-tk xdg-user-dirs
+          for i in {1..5}; do sudo apt-get update && break || sleep 15; done
+          for i in {1..5}; do sudo apt-get install -y python3-tk xdg-user-dirs && break || sleep 15; done
 
       - name: Install Python dependencies
         run: |
