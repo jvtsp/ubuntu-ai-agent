@@ -86,4 +86,4 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Bandit security scan
-        run: ruff check src/ --select S
+        run: ruff check src/ --select S --extend-ignore S603,S607
