@@ -299,7 +299,7 @@ def execute_command(
             "--proc",
             "/proc",
             "--bind",
-            "/tmp",
+            "/tmp",  # noqa: S108
             "/tmp",  # noqa: S108
             "--bind",
             home_dir,
