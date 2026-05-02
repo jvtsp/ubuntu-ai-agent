@@ -49,6 +49,9 @@ dev = [
     "types-PyYAML>=6.0",
 ]
 
+[project.scripts]
+ubuntu-agent = "main:main"
+
 [project.urls]
 Repository = "https://github.com/seu-usuario/IA_agentica_ubuntu"
 Issues = "https://github.com/seu-usuario/IA_agentica_ubuntu/issues"

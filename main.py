@@ -199,8 +199,20 @@ def main() -> None:
     # Banco de dados
     from src.storage.database import Database
     db_path = config.get("history", {}).get("db_path", "data/history.db")
-    db = Database(os.path.join(ROOT_DIR, db_path))
-    log.info("Banco de dados inicializado: %s", db_path)
+    
+    # Suporte a Snap: se o caminho for relativo e SNAP_USER_DATA existir, gravar lá
+    if not os.path.isabs(db_path):
+        if "SNAP_USER_DATA" in os.environ:
+            db_full_path = os.path.join(os.environ["SNAP_USER_DATA"], db_path)
+        else:
+            db_full_path = os.path.join(ROOT_DIR, db_path)
+        
+        os.makedirs(os.path.dirname(db_full_path), exist_ok=True)
+    else:
+        db_full_path = db_path
+        
+    db = Database(db_full_path)
+    log.info("Banco de dados inicializado: %s", db_full_path)
 
     # Vault (Cofre)
     from src.storage.vault import Vault

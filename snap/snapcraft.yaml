@@ -1,0 +1,54 @@
+name: ubuntu-agent
+base: core24
+version: '0.2.0'
+summary: Desktop assistant translating natural language to Bash
+description: |
+  Ubuntu Agent is a desktop assistant that uses local LLMs (Ollama)
+  to translate natural language requests into secure Bash commands.
+  It includes a dynamic UI, safety validation, and self-healing loops.
+
+grade: stable
+confinement: classic
+
+apps:
+  ubuntu-agent:
+    command: bin/ubuntu-agent
+    desktop: usr/share/applications/ubuntu-agent.desktop
+    plugs:
+      - x11
+      - wayland
+      - desktop
+      - desktop-legacy
+      - home
+      - network
+      - network-bind
+      - dbus
+
+parts:
+  ubuntu-agent:
+    plugin: python
+    source: .
+    python-requirements:
+      - requirements.txt
+    build-packages:
+      - python3-tk
+      - python3-dev
+      - libdbus-1-dev
+      - libgirepository1.0-dev
+    stage-packages:
+      - python3-tk
+      - libdbus-1-3
+      - xdg-user-dirs
+    override-build: |
+      craftctl default
+      # Create desktop file
+      mkdir -p $CRAFT_PART_INSTALL/usr/share/applications
+      cat <<EOF > $CRAFT_PART_INSTALL/usr/share/applications/ubuntu-agent.desktop
+      [Desktop Entry]
+      Name=Ubuntu Agent
+      Exec=ubuntu-agent
+      Icon=utilities-terminal
+      Type=Application
+      Categories=System;Utility;
+      Comment=AI-powered Bash Assistant
+      EOF

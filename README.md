@@ -71,6 +71,25 @@ O projeto utiliza **LangGraph** para criar um fluxo de execução determinístic
 
 *(O agente usa o modelo `qwen2.5-coder:3b` por padrão, que é leve e altamente otimizado para comandos bash).*
 
+### 📦 Instalação via Snap (Recomendado)
+
+O Ubuntu Agent pode ser instalado facilmente via Snap para maior portabilidade e gerenciamento de dependências:
+
+1. **Construa o snap localmente (requer `snapcraft`):**
+   ```bash
+   snapcraft
+   ```
+
+2. **Instale o pacote gerado:**
+   ```bash
+   sudo snap install ubuntu-agent_*.snap --classic --dangerous
+   ```
+
+3. **Inicie o agente:**
+   ```bash
+   ubuntu-agent
+   ```
+
 ---
 
 ## ⌨️ Como Usar
