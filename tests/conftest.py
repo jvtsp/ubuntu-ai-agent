@@ -77,6 +77,7 @@ def default_config(security_config):
 def db_in_memory():
     """Banco de dados SQLite in-memory para testes."""
     from src.storage.database import Database
+
     return Database(":memory:")
 
 
@@ -86,7 +87,7 @@ def mock_llm_client():
     client = MagicMock()
     client.base_url = "http://localhost:11434/v1"
     client.model = "qwen2.5-coder:3b"
-    client.invoke.return_value = '```bash\nls -la\n```'
+    client.invoke.return_value = "```bash\nls -la\n```"
     client.health_check.return_value = True
     client.list_models.return_value = [
         {"name": "qwen2.5-coder:3b", "size": "1.9 GB"},
@@ -98,6 +99,7 @@ def mock_llm_client():
 def mock_vault():
     """Mock do Vault."""
     from src.storage.vault import Vault
+
     vault = Vault()
     return vault
 

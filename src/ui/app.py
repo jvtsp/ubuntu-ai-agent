@@ -54,6 +54,7 @@ class UbuntuAgentApp(ctk.CTk):
         # Tentar definir opacidade (pode não funcionar em Wayland)
         opacity = self.ui_config.get("opacity", 0.95)
         import contextlib
+
         with contextlib.suppress(Exception):
             self.attributes("-alpha", opacity)
 
@@ -68,8 +69,8 @@ class UbuntuAgentApp(ctk.CTk):
         y = int(self.winfo_screenheight() * 0.2)  # 20% do topo da tela para a barra de busca
 
         # Alturas da UI
-        self._base_height = 80      # Barra inicial
-        self._expanded_height = 450 # Janela expandida
+        self._base_height = 80  # Barra inicial
+        self._expanded_height = 450  # Janela expandida
 
         self.geometry(f"{self.width}x{self._base_height}+{x}+{y}")
         self._x_pos = x
@@ -276,7 +277,7 @@ class UbuntuAgentApp(ctk.CTk):
             height=35,
             corner_radius=8,
             command=self._change_appearance_mode,
-            state="readonly"
+            state="readonly",
         )
         appearance_dropdown.pack(side="left", fill="x", expand=True, padx=(0, 8))
 
@@ -389,12 +390,14 @@ class UbuntuAgentApp(ctk.CTk):
     def _refresh_models(self) -> None:
         """Busca os modelos disponíveis no Ollama e atualiza o dropdown."""
         import threading
+
         def fetch():
             models = self.llm.list_models()
             names = [m["name"] for m in models]
             if not names:
                 names = [self.llm.model]
             self.after(0, lambda: self._update_model_dropdown(names, models))
+
         threading.Thread(target=fetch, daemon=True).start()
 
     def _update_model_dropdown(self, names: list[str], models: list[dict]) -> None:
@@ -416,7 +419,7 @@ class UbuntuAgentApp(ctk.CTk):
                 text="⚠ Não foi possível listar modelos",
                 text_color=("#d29922", "#e3b341"),
             )
-        log.info("Modelos disponíveis: %s", [m['name'] for m in models])
+        log.info("Modelos disponíveis: %s", [m["name"] for m in models])
 
     def _apply_model(self) -> None:
         """Aplica o modelo selecionado."""
@@ -559,9 +562,7 @@ class UbuntuAgentApp(ctk.CTk):
         log.info("Usuário confirmou execução do comando.")
         self.log_area.add_message("✓ Confirmado. Executando...", "info")
 
-        thread = threading.Thread(
-            target=self._execute_confirmed, args=(state,), daemon=True
-        )
+        thread = threading.Thread(target=self._execute_confirmed, args=(state,), daemon=True)
         thread.start()
 
     def _execute_confirmed(self, state: AgentState) -> None:
@@ -620,9 +621,11 @@ class UbuntuAgentApp(ctk.CTk):
 
     def _check_llm_status(self) -> None:
         """Verifica o status do LLM em background."""
+
         def check():
             is_online = self.llm.health_check()
             self.after(0, lambda: self.status.set_status("online" if is_online else "offline"))
+
         thread = threading.Thread(target=check, daemon=True)
         thread.start()
 
@@ -634,6 +637,7 @@ class UbuntuAgentApp(ctk.CTk):
     def _fade_in(self) -> None:
         """Animação sutil de fade-in ao aparecer."""
         import contextlib
+
         with contextlib.suppress(Exception):
             self.attributes("-alpha", 0.0)
             self._fade_step(0.0)

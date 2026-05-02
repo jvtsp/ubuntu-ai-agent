@@ -15,6 +15,7 @@ from src.logger import get_logger
 
 log = get_logger("system.dbus")
 
+
 class UbuntuAgentInterface(ServiceInterface):
     def __init__(self, toggle_callback):
         super().__init__("org.ubuntu.Agent")
@@ -32,6 +33,7 @@ def start_dbus_service(toggle_callback) -> None:
     """
     Inicia o serviço D-Bus em uma thread separada rodando asyncio.
     """
+
     def run_dbus_loop():
         async def setup():
             try:
@@ -75,7 +77,7 @@ def send_toggle_signal() -> bool:
             path="/org/ubuntu/Agent",
             interface="org.ubuntu.Agent",
             member="Toggle",
-            message_type=MessageType.METHOD_CALL
+            message_type=MessageType.METHOD_CALL,
         )
         # Tenta enviar a mensagem. Se o serviço não existir, lança erro.
         reply = bus.call_sync(msg)

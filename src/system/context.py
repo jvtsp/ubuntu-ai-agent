@@ -47,14 +47,17 @@ def collect_system_context() -> dict:
     ctx["videos"] = _run_quiet("xdg-user-dir VIDEOS", os.path.join(ctx["home"], "Videos"))
 
     # Sistema
-    ctx["os_version"] = _run_quiet("lsb_release -d -s 2>/dev/null || cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2", "Ubuntu")
+    ctx["os_version"] = _run_quiet(
+        "lsb_release -d -s 2>/dev/null || cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2", "Ubuntu"
+    )
     ctx["kernel"] = _run_quiet("uname -r", "")
     ctx["arch"] = _run_quiet("uname -m", "x86_64")
     ctx["locale"] = os.environ.get("LANG", "en_US.UTF-8")
     ctx["shell"] = os.environ.get("SHELL", "/bin/bash")
 
-    log.info("Contexto do sistema coletado: user=%s, desktop=%s, locale=%s",
-             ctx["username"], ctx["desktop"], ctx["locale"])
+    log.info(
+        "Contexto do sistema coletado: user=%s, desktop=%s, locale=%s", ctx["username"], ctx["desktop"], ctx["locale"]
+    )
 
     return ctx
 
@@ -79,16 +82,16 @@ def format_system_context(ctx: dict) -> str:
         f"- Shell: {ctx['shell']}\n"
         f"\n"
         f"VARIÁVEIS DE AMBIENTE DISPONÍVEIS (o sistema as define automaticamente):\n"
-        f"- $DESKTOP = \"{ctx['desktop']}\"\n"
-        f"- $DOCUMENTS = \"{ctx['documents']}\"\n"
-        f"- $DOWNLOADS = \"{ctx['downloads']}\"\n"
-        f"- $MUSIC = \"{ctx['music']}\"\n"
-        f"- $PICTURES = \"{ctx['pictures']}\"\n"
-        f"- $VIDEOS = \"{ctx['videos']}\"\n"
+        f'- $DESKTOP = "{ctx["desktop"]}"\n'
+        f'- $DOCUMENTS = "{ctx["documents"]}"\n'
+        f'- $DOWNLOADS = "{ctx["downloads"]}"\n'
+        f'- $MUSIC = "{ctx["music"]}"\n'
+        f'- $PICTURES = "{ctx["pictures"]}"\n'
+        f'- $VIDEOS = "{ctx["videos"]}"\n'
         f"\n"
         f"REGRA OBRIGATÓRIA: Sempre use essas variáveis nos comandos.\n"
         f"Exemplos:\n"
-        f"  touch \"$DESKTOP/arquivo.txt\" (NÃO use ~/Área de Trabalho/)\n"
-        f"  cp foto.jpg \"$PICTURES/\" (NÃO use ~/Imagens/)\n"
-        f"  ls \"$DOWNLOADS\" (NÃO use ~/Downloads/)"
+        f'  touch "$DESKTOP/arquivo.txt" (NÃO use ~/Área de Trabalho/)\n'
+        f'  cp foto.jpg "$PICTURES/" (NÃO use ~/Imagens/)\n'
+        f'  ls "$DOWNLOADS" (NÃO use ~/Downloads/)'
     )

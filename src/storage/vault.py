@@ -1,4 +1,3 @@
-
 class Vault:
     """Gerencia credenciais armazenadas estritamente em memória (RAM)."""
 
@@ -22,6 +21,7 @@ class Vault:
             # dar uma dica para o garbage collector ou usar ctypes
             # para zerar o buffer (best effort).
             import contextlib
+
             with contextlib.suppress(Exception):
                 buffer_size = len(self._sudo_password) * 2  # utf-16/utf-8 var size
                 ctypes.memset(id(self._sudo_password) + 24, 0, buffer_size)

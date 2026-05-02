@@ -12,6 +12,7 @@ from enum import Enum
 
 class CommandCategory(Enum):
     """Categorias de segurança para comandos."""
+
     READ_ONLY = "read_only"
     NEEDS_CONFIRMATION = "needs_confirmation"
     BLOCKED = "blocked"
@@ -20,6 +21,7 @@ class CommandCategory(Enum):
 @dataclass
 class SafetyResult:
     """Resultado da validação de segurança."""
+
     category: CommandCategory
     is_safe: bool
     reason: str = ""
@@ -28,18 +30,77 @@ class SafetyResult:
 
 # Comandos considerados seguros (read-only)
 READ_ONLY_COMMANDS = {
-    "ls", "cat", "grep", "find", "df", "free", "top", "htop",
-    "ps", "whoami", "hostname", "uname", "date", "cal", "uptime",
-    "head", "tail", "wc", "sort", "uniq", "diff", "file", "which",
-    "whereis", "type", "echo", "pwd", "id", "groups", "env",
-    "printenv", "locale", "lsb_release", "lscpu", "lsmem", "lsblk",
-    "lsusb", "lspci", "ip", "ifconfig", "ping", "dig", "nslookup",
-    "traceroute", "ss", "netstat", "du", "stat", "tree", "man",
-    "help", "info", "apt list", "apt show", "apt search", "dpkg -l",
-    "snap list", "flatpak list", "systemctl status",
-    "journalctl", "dmesg", "sensors", "inxi",
-    "gnome-terminal", "x-terminal-emulator", "konsole", "xfce4-terminal",
-    "terminator", "alacritty", "kitty", "xterm",
+    "ls",
+    "cat",
+    "grep",
+    "find",
+    "df",
+    "free",
+    "top",
+    "htop",
+    "ps",
+    "whoami",
+    "hostname",
+    "uname",
+    "date",
+    "cal",
+    "uptime",
+    "head",
+    "tail",
+    "wc",
+    "sort",
+    "uniq",
+    "diff",
+    "file",
+    "which",
+    "whereis",
+    "type",
+    "echo",
+    "pwd",
+    "id",
+    "groups",
+    "env",
+    "printenv",
+    "locale",
+    "lsb_release",
+    "lscpu",
+    "lsmem",
+    "lsblk",
+    "lsusb",
+    "lspci",
+    "ip",
+    "ifconfig",
+    "ping",
+    "dig",
+    "nslookup",
+    "traceroute",
+    "ss",
+    "netstat",
+    "du",
+    "stat",
+    "tree",
+    "man",
+    "help",
+    "info",
+    "apt list",
+    "apt show",
+    "apt search",
+    "dpkg -l",
+    "snap list",
+    "flatpak list",
+    "systemctl status",
+    "journalctl",
+    "dmesg",
+    "sensors",
+    "inxi",
+    "gnome-terminal",
+    "x-terminal-emulator",
+    "konsole",
+    "xfce4-terminal",
+    "terminator",
+    "alacritty",
+    "kitty",
+    "xterm",
 }
 
 
@@ -56,13 +117,12 @@ class SecurityValidator:
         raw_patterns = config.get("blocked_patterns", [])
         self.blocked_patterns: list[re.Pattern] = []
         import contextlib
+
         for pattern in raw_patterns:
             with contextlib.suppress(re.error):
                 self.blocked_patterns.append(re.compile(pattern, re.IGNORECASE))
 
-        self.confirmation_keywords: list[str] = config.get(
-            "require_confirmation_for", []
-        )
+        self.confirmation_keywords: list[str] = config.get("require_confirmation_for", [])
 
     def validate(self, command: str) -> SafetyResult:
         """
@@ -135,7 +195,7 @@ class SecurityValidator:
         """
         # Remove pipes e analisa o primeiro comando
         # Para comandos encadeados com &&, verifica cada um
-        parts = re.split(r'\s*&&\s*|\s*\|\|\s*', command)
+        parts = re.split(r"\s*&&\s*|\s*\|\|\s*", command)
 
         for part in parts:
             part = part.strip()

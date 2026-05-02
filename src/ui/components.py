@@ -52,7 +52,7 @@ class InputField(ctk.CTkFrame):
             self,
             text="user@agent:~$",
             font=ctk.CTkFont(family=font_family, size=font_size, weight="bold"),
-            text_color=("#2ea043", "#3fb950"), # Ubuntu green adaptable
+            text_color=("#2ea043", "#3fb950"),  # Ubuntu green adaptable
         )
 
         self.prompt_label.pack(side="left", padx=(10, 5), pady=2)
@@ -83,10 +83,10 @@ class StatusIndicator(ctk.CTkFrame):
 
     # Cores para cada status adaptáveis ao tema (Light, Dark)
     COLORS: typing.ClassVar[dict[str, tuple[str, str]]] = {
-        "online": ("#198754", "#2ea043"),     # Verde
-        "processing": ("#ffc107", "#e3b341"), # Amarelo
-        "offline": ("#dc3545", "#f85149"),    # Vermelho
-        "idle": ("gray50", "gray60"),         # Cinza
+        "online": ("#198754", "#2ea043"),  # Verde
+        "processing": ("#ffc107", "#e3b341"),  # Amarelo
+        "offline": ("#dc3545", "#f85149"),  # Vermelho
+        "idle": ("gray50", "gray60"),  # Cinza
     }
 
     LABELS: typing.ClassVar[dict[str, str]] = {
@@ -295,7 +295,7 @@ class ConfirmationModal(ctk.CTkToplevel):
             self,
             text="⚠ Confirmação Necessária",
             font=ctk.CTkFont(family=font_family, size=16, weight="bold"),
-            text_color=("#d29922", "#e3b341"), # Amarelo/Laranja
+            text_color=("#d29922", "#e3b341"),  # Amarelo/Laranja
         )
         title_label.pack(pady=(20, 10))
 
@@ -321,7 +321,7 @@ class ConfirmationModal(ctk.CTkToplevel):
             cmd_frame,
             text=f"$ {command}",
             font=ctk.CTkFont(family=font_family, size=13),
-            text_color=("#0550ae", "#58a6ff"), # Azul
+            text_color=("#0550ae", "#58a6ff"),  # Azul
             wraplength=490,
             justify="left",
         )
@@ -389,4 +389,3 @@ class ConfirmationModal(ctk.CTkToplevel):
         self.destroy()
         if self.on_reject:
             self.on_reject()
-

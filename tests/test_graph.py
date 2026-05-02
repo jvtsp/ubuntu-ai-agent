@@ -21,8 +21,10 @@ def agent(security_config, mock_llm_client):
         "security": {**security_config, "command_timeout": 10},
         "agent": {"max_retries": 1},
     }
-    with patch("src.agent.graph.collect_system_context") as mock_ctx, \
-         patch("src.agent.graph.format_system_context") as mock_fmt:
+    with (
+        patch("src.agent.graph.collect_system_context") as mock_ctx,
+        patch("src.agent.graph.format_system_context") as mock_fmt,
+    ):
         mock_ctx.return_value = {"desktop": "/home/test/Desktop"}
         mock_fmt.return_value = "MOCK CONTEXT"
         return AgentGraph(mock_llm_client, security, db, config)
@@ -33,9 +35,7 @@ class TestAgentGraphReadOnly:
         """Comando read-only deve executar sem confirmação."""
         agent.llm.invoke.return_value = '```bash\necho "hello"\n```'
         with patch("src.agent.graph.execute_command") as mock_exec:
-            mock_exec.return_value = MagicMock(
-                stdout="hello\n", stderr="", exit_code=0, timed_out=False
-            )
+            mock_exec.return_value = MagicMock(stdout="hello\n", stderr="", exit_code=0, timed_out=False)
             result = agent.run("diga hello")
         assert result.get("ui_status") in ("success", "info")
         assert result.get("is_complete") is True
@@ -44,7 +44,7 @@ class TestAgentGraphReadOnly:
 class TestAgentGraphConfirmation:
     def test_sudo_needs_confirmation(self, agent):
         """Comando com sudo deve pedir confirmação."""
-        agent.llm.invoke.return_value = '```bash\nsudo apt update\n```'
+        agent.llm.invoke.return_value = "```bash\nsudo apt update\n```"
         result = agent.run("atualize os pacotes")
         assert result.get("needs_confirmation") is True
         assert result.get("is_complete") is False or result.get("needs_confirmation")
@@ -53,7 +53,7 @@ class TestAgentGraphConfirmation:
 class TestAgentGraphBlocked:
     def test_blocked_command(self, agent):
         """Comando perigoso deve ser bloqueado."""
-        agent.llm.invoke.return_value = '```bash\nrm -rf /\n```'
+        agent.llm.invoke.return_value = "```bash\nrm -rf /\n```"
         result = agent.run("apague tudo")
         assert result.get("ui_status") == "blocked"
 
@@ -88,7 +88,7 @@ class TestAgentGraphExtraction:
 
     def test_llm_error_response(self, agent):
         """Resposta de erro do LLM deve ser tratada."""
-        agent.llm.invoke.return_value = '```bash\n# ERRO: Pedido impossível\n```'
+        agent.llm.invoke.return_value = "```bash\n# ERRO: Pedido impossível\n```"
         result = agent.run("faça o impossível")
         assert result.get("ui_status") == "warning"
 
@@ -102,9 +102,7 @@ class TestAgentGraphSelfHealing:
         ]
         agent.llm.invoke.side_effect = [*responses, "SATISFATORIO"]
         with patch("src.agent.graph.execute_command") as mock_exec:
-            mock_exec.return_value = MagicMock(
-                stdout="tentativa 1\n", stderr="", exit_code=0, timed_out=False
-            )
+            mock_exec.return_value = MagicMock(stdout="tentativa 1\n", stderr="", exit_code=0, timed_out=False)
             # First call returns command, second call is evaluation
             agent.llm.invoke.side_effect = [
                 '```bash\necho "test"\n```',  # LLM response
@@ -127,9 +125,7 @@ class TestExecuteConfirmed:
         }
         agent.llm.invoke.return_value = "SATISFATORIO"
         with patch("src.agent.graph.execute_command") as mock_exec:
-            mock_exec.return_value = MagicMock(
-                stdout="ok\n", stderr="", exit_code=0, timed_out=False
-            )
+            mock_exec.return_value = MagicMock(stdout="ok\n", stderr="", exit_code=0, timed_out=False)
             result = agent.execute_confirmed(state)
         assert result.get("is_complete") is True
         assert result.get("ui_status") == "success"

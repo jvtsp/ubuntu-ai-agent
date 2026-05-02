@@ -15,7 +15,7 @@ from src.executor.bash import (
 
 class TestExtractCommand:
     def test_extract_from_bash_block(self):
-        result = extract_command('```bash\nls -la /home\n```')
+        result = extract_command("```bash\nls -la /home\n```")
         assert result.success is True
         assert result.command == "ls -la /home"
 
@@ -25,12 +25,12 @@ class TestExtractCommand:
         assert result.command == 'echo "hello"'
 
     def test_extract_multiline(self):
-        result = extract_command('```bash\nsudo apt update && sudo apt upgrade -y\n```')
+        result = extract_command("```bash\nsudo apt update && sudo apt upgrade -y\n```")
         assert result.success is True
         assert "apt update" in result.command
 
     def test_extract_error_response(self):
-        result = extract_command('```bash\n# ERRO: Ambígua\n```')
+        result = extract_command("```bash\n# ERRO: Ambígua\n```")
         assert result.success is False
         assert result.is_error_response is True
 
@@ -62,7 +62,7 @@ class TestExtractCommand:
 
 class TestSanitizePaths:
     def test_area_de_trabalho(self):
-        assert '"$DESKTOP"' in _sanitize_paths('touch ~/Área de Trabalho/t.txt')
+        assert '"$DESKTOP"' in _sanitize_paths("touch ~/Área de Trabalho/t.txt")
 
     def test_desktop_en(self):
         assert '"$DESKTOP"' in _sanitize_paths("ls ~/Desktop")
@@ -89,7 +89,7 @@ class TestSanitizePaths:
         assert '"$DOCUMENTS"' in _sanitize_paths("ls ~/documentos")
 
     def test_home_var(self):
-        assert '"$DESKTOP"' in _sanitize_paths('touch $HOME/Área de Trabalho/t')
+        assert '"$DESKTOP"' in _sanitize_paths("touch $HOME/Área de Trabalho/t")
 
 
 class TestShouldWrapGraphical:
@@ -141,6 +141,7 @@ class TestExecuteCommand:
     @patch("src.executor.bash.subprocess.run")
     def test_vault_sudo(self, mock_run):
         from src.storage.vault import Vault
+
         vault = Vault()
         vault.set_sudo_password("pwd123")
         mock_run.return_value = MagicMock(stdout="ok", stderr="", returncode=0)

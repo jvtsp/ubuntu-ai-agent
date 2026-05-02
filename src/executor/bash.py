@@ -19,10 +19,9 @@ def _xdg_dir(name: str) -> str:
     """Resolve um diretório XDG (DESKTOP, DOCUMENTS, etc.) via xdg-user-dir."""
     import contextlib
     import os
+
     with contextlib.suppress(Exception):
-        result = subprocess.run(
-            ["xdg-user-dir", name], capture_output=True, text=True, timeout=3
-        )
+        result = subprocess.run(["xdg-user-dir", name], capture_output=True, text=True, timeout=3)
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip()
     return os.path.expanduser("~")
@@ -36,24 +35,24 @@ def _sanitize_paths(command: str) -> str:
     # Mapeamento de padrões → variáveis
     replacements = [
         # "Área de Trabalho" / "Área de trabalho" / "Area de Trabalho" (qualquer capitalização)
-        (re.compile(r'~/[ÁáAa]rea[\\ ]+de[\\ ]+[Tt]rabalho', re.IGNORECASE), '"$DESKTOP"'),
-        (re.compile(r'\$HOME/[ÁáAa]rea[\\ ]+de[\\ ]+[Tt]rabalho', re.IGNORECASE), '"$DESKTOP"'),
+        (re.compile(r"~/[ÁáAa]rea[\\ ]+de[\\ ]+[Tt]rabalho", re.IGNORECASE), '"$DESKTOP"'),
+        (re.compile(r"\$HOME/[ÁáAa]rea[\\ ]+de[\\ ]+[Tt]rabalho", re.IGNORECASE), '"$DESKTOP"'),
         # Desktop (locale en_US)
-        (re.compile(r'~/Desktop\b'), '"$DESKTOP"'),
+        (re.compile(r"~/Desktop\b"), '"$DESKTOP"'),
         # Documentos / Documents
-        (re.compile(r'~/Documentos\b', re.IGNORECASE), '"$DOCUMENTS"'),
-        (re.compile(r'~/Documents\b'), '"$DOCUMENTS"'),
+        (re.compile(r"~/Documentos\b", re.IGNORECASE), '"$DOCUMENTS"'),
+        (re.compile(r"~/Documents\b"), '"$DOCUMENTS"'),
         # Downloads
-        (re.compile(r'~/Downloads\b', re.IGNORECASE), '"$DOWNLOADS"'),
+        (re.compile(r"~/Downloads\b", re.IGNORECASE), '"$DOWNLOADS"'),
         # Músicas / Musicas / Music
-        (re.compile(r'~/M[úu]sicas?\b', re.IGNORECASE), '"$MUSIC"'),
-        (re.compile(r'~/Music\b'), '"$MUSIC"'),
+        (re.compile(r"~/M[úu]sicas?\b", re.IGNORECASE), '"$MUSIC"'),
+        (re.compile(r"~/Music\b"), '"$MUSIC"'),
         # Imagens / Pictures
-        (re.compile(r'~/Imagens\b', re.IGNORECASE), '"$PICTURES"'),
-        (re.compile(r'~/Pictures\b'), '"$PICTURES"'),
+        (re.compile(r"~/Imagens\b", re.IGNORECASE), '"$PICTURES"'),
+        (re.compile(r"~/Pictures\b"), '"$PICTURES"'),
         # Vídeos / Videos
-        (re.compile(r'~/V[íi]deos\b', re.IGNORECASE), '"$VIDEOS"'),
-        (re.compile(r'~/Videos\b'), '"$VIDEOS"'),
+        (re.compile(r"~/V[íi]deos\b", re.IGNORECASE), '"$VIDEOS"'),
+        (re.compile(r"~/Videos\b"), '"$VIDEOS"'),
     ]
 
     original = command
@@ -87,21 +86,52 @@ COMMAND_LINE_PATTERN = re.compile(
 
 # Aplicativos gráficos conhecidos
 GRAPHICAL_APPS = {
-    "nautilus", "firefox", "google-chrome", "chromium", "code",
-    "gedit", "gnome-text-editor", "eog", "evince", "totem",
-    "rhythmbox", "shotwell", "gimp", "inkscape", "libreoffice",
-    "thunderbird", "vlc", "mpv", "xdg-open", "gnome-terminal",
-    "gnome-calculator", "gnome-system-monitor", "gnome-disks",
-    "gnome-control-center", "gnome-tweaks", "gnome-software",
-    "transmission-gtk", "blender", "obs-studio", "kdenlive",
-    "telegram-desktop", "discord", "slack", "spotify",
-    "nemo", "thunar", "dolphin", "kate", "okular",
+    "nautilus",
+    "firefox",
+    "google-chrome",
+    "chromium",
+    "code",
+    "gedit",
+    "gnome-text-editor",
+    "eog",
+    "evince",
+    "totem",
+    "rhythmbox",
+    "shotwell",
+    "gimp",
+    "inkscape",
+    "libreoffice",
+    "thunderbird",
+    "vlc",
+    "mpv",
+    "xdg-open",
+    "gnome-terminal",
+    "gnome-calculator",
+    "gnome-system-monitor",
+    "gnome-disks",
+    "gnome-control-center",
+    "gnome-tweaks",
+    "gnome-software",
+    "transmission-gtk",
+    "blender",
+    "obs-studio",
+    "kdenlive",
+    "telegram-desktop",
+    "discord",
+    "slack",
+    "spotify",
+    "nemo",
+    "thunar",
+    "dolphin",
+    "kate",
+    "okular",
 }
 
 
 @dataclass
 class ExtractionResult:
     """Resultado da extração de comando."""
+
     success: bool
     command: str = ""
     is_error_response: bool = False
@@ -111,6 +141,7 @@ class ExtractionResult:
 @dataclass
 class ExecutionResult:
     """Resultado da execução de um comando."""
+
     stdout: str = ""
     stderr: str = ""
     exit_code: int = -1
@@ -201,7 +232,7 @@ def execute_command(
     command: str,
     timeout: int = 60,
     working_dir: str | None = None,
-    vault = None,
+    vault=None,
 ) -> ExecutionResult:
     """
     Executa um comando Bash via subprocess.
@@ -224,6 +255,7 @@ def execute_command(
     command = _sanitize_paths(command)
 
     import shutil
+
     bwrap_path = shutil.which("bwrap")
     is_graphical = _should_wrap_graphical(command)
     has_sudo = "sudo" in command.lower()
@@ -232,6 +264,7 @@ def execute_command(
     apparmor_blocks_userns = False
     if bwrap_path:
         import contextlib
+
         with contextlib.suppress(Exception), open("/proc/sys/kernel/apparmor_restrict_unprivileged_userns") as f:
             apparmor_blocks_userns = f.read().strip() == "1"
 
@@ -249,17 +282,31 @@ def execute_command(
         home_dir = os.path.expanduser("~")
         cmd_args = [
             bwrap_path,
-            "--ro-bind", "/usr", "/usr",
-            "--ro-bind", "/bin", "/bin",
-            "--ro-bind", "/lib", "/lib",
-            "--ro-bind", "/etc", "/etc",
-            "--dev", "/dev",
-            "--proc", "/proc",
-            "--bind", "/tmp", "/tmp",  # noqa: S108
-            "--bind", home_dir, home_dir,
+            "--ro-bind",
+            "/usr",
+            "/usr",
+            "--ro-bind",
+            "/bin",
+            "/bin",
+            "--ro-bind",
+            "/lib",
+            "/lib",
+            "--ro-bind",
+            "/etc",
+            "/etc",
+            "--dev",
+            "/dev",
+            "--proc",
+            "/proc",
+            "--bind",
+            "/tmp",
+            "/tmp",  # noqa: S108
+            "--bind",
+            home_dir,
+            home_dir,
             "--die-with-parent",
             "--",
-            *cmd_args
+            *cmd_args,
         ]
     elif bwrap_path and apparmor_blocks_userns and not is_graphical and not has_sudo:
         log.debug("Bwrap skipado: bloqueado pelo AppArmor restritivo no Ubuntu 24.04.")
@@ -275,8 +322,8 @@ def execute_command(
         password = vault.get_sudo_password()
         if password:
             # Substituir sudo por sudo -S para forçar a leitura do stdin
-            command_with_sudo_s = re.sub(r'\bsudo\b', 'sudo -S', command, flags=re.IGNORECASE)
-            cmd_args[-1] = command_with_sudo_s # Atualiza o script no comando bash -c
+            command_with_sudo_s = re.sub(r"\bsudo\b", "sudo -S", command, flags=re.IGNORECASE)
+            cmd_args[-1] = command_with_sudo_s  # Atualiza o script no comando bash -c
             stdin_data = password + "\n"
             log.info("Senha sudo injetada via vault.")
 

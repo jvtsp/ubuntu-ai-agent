@@ -24,6 +24,7 @@ log = get_logger("agent.graph")
 
 class AgentState(TypedDict, total=False):
     """Estado compartilhado entre os nós do grafo."""
+
     # Input
     user_input: str
     history_context: str
@@ -61,7 +62,9 @@ class AgentState(TypedDict, total=False):
 class AgentGraph:
     """Grafo do agente Ubuntu que processa comandos em linguagem natural."""
 
-    def __init__(self, llm_client: LLMClient, security: SecurityValidator, db: Database, config: dict, vault=None) -> None:
+    def __init__(
+        self, llm_client: LLMClient, security: SecurityValidator, db: Database, config: dict, vault=None
+    ) -> None:
         """
         Inicializa o grafo com suas dependências.
 
@@ -210,7 +213,9 @@ class AgentGraph:
             message_parts.append(context)
         message_parts.append(f"Solicitação do usuário: {user_input}")
         if feedback:
-            message_parts.append(f"\nATENÇÃO: A tentativa anterior foi insatisfatória. Feedback: {feedback}\nGere um comando MELHOR que realmente atenda ao pedido.")
+            message_parts.append(
+                f"\nATENÇÃO: A tentativa anterior foi insatisfatória. Feedback: {feedback}\nGere um comando MELHOR que realmente atenda ao pedido."
+            )
         full_message = "\n\n".join(message_parts)
 
         try:
@@ -252,7 +257,7 @@ class AgentGraph:
         """Extrai o comando Bash da resposta do LLM."""
         llm_response = state.get("llm_response", "")
         result = extract_command(llm_response)
-        log.info("Extração: success=%s, command='%s'", result.success, result.command[:100] if result.command else '')
+        log.info("Extração: success=%s, command='%s'", result.success, result.command[:100] if result.command else "")
         return {
             "extraction": result,
             "extracted_command": result.command if result.success else "",
@@ -275,7 +280,9 @@ class AgentGraph:
         """Valida o comando extraído contra a blocklist de segurança."""
         command = state.get("extracted_command", "")
         result = self.security.validate(command)
-        log.info("Segurança: category=%s, is_safe=%s, reason='%s'", result.category.value, result.is_safe, result.reason)
+        log.info(
+            "Segurança: category=%s, is_safe=%s, reason='%s'", result.category.value, result.is_safe, result.reason
+        )
         return {"safety_result": result}
 
     def _bloquear_cmd(self, state: AgentState) -> dict:
@@ -466,6 +473,7 @@ class AgentGraph:
         """
         self._stream_callback = stream_callback
         import time
+
         now = time.time()
         if now - self._last_request_time < self._min_request_interval:
             return {
@@ -488,6 +496,7 @@ class AgentGraph:
 
         result = self.graph.invoke(initial_state)
         from typing import cast
+
         return cast(AgentState, result)
 
     def execute_confirmed(self, state: AgentState) -> AgentState:
@@ -506,7 +515,9 @@ class AgentGraph:
 
         while retry_count <= self.max_retries:
             command = state.get("extracted_command", "")
-            self._notify_step("▶ Executando comando..." if retry_count == 0 else f"🔄 Tentativa {retry_count + 1}: executando...")
+            self._notify_step(
+                "▶ Executando comando..." if retry_count == 0 else f"🔄 Tentativa {retry_count + 1}: executando..."
+            )
             log.info("Executando confirmado (tentativa %d): %s", retry_count + 1, command)
 
             result = execute_command(command, timeout=self.command_timeout, vault=self.vault)

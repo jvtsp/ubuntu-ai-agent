@@ -3,21 +3,18 @@ Testes para o módulo de persistência (storage/database.py).
 """
 
 
-
 class TestDatabase:
     def test_init_creates_table(self, db_in_memory):
         """Tabela commands deve ser criada na inicialização."""
         with db_in_memory._connect() as conn:
-            cursor = conn.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name='commands'"
-            )
+            cursor = conn.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='commands'")
             assert cursor.fetchone() is not None
 
     def test_save_and_retrieve(self, db_in_memory):
         """Deve salvar e recuperar um comando."""
         db_in_memory.save_command(
             user_input="instale o vim",
-            llm_response='```bash\nsudo apt install -y vim\n```',
+            llm_response="```bash\nsudo apt install -y vim\n```",
             extracted_command="sudo apt install -y vim",
             stdout="Reading package lists...",
             stderr="",

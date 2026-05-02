@@ -15,6 +15,7 @@ from src.logger import get_logger
 
 log = get_logger("agent.llm")
 
+
 class LLMClient:
     """Cliente para interação com o LLM local."""
 
@@ -79,12 +80,14 @@ class LLMClient:
                 data = resp.json()
                 models = []
                 for m in data.get("models", []):
-                    size_gb = m.get("size", 0) / (1024 ** 3)
-                    models.append({
-                        "name": m.get("name", ""),
-                        "size": f"{size_gb:.1f} GB",
-                        "modified": m.get("modified_at", ""),
-                    })
+                    size_gb = m.get("size", 0) / (1024**3)
+                    models.append(
+                        {
+                            "name": m.get("name", ""),
+                            "size": f"{size_gb:.1f} GB",
+                            "modified": m.get("modified_at", ""),
+                        }
+                    )
                 return models
         except requests.RequestException:
             pass
@@ -116,13 +119,9 @@ class LLMClient:
         except Exception as e:
             error_msg = str(e).lower()
             if "timeout" in error_msg or "timed out" in error_msg:
-                raise TimeoutError(
-                    f"LLM demorou mais de {self.timeout}s para responder."
-                ) from e
+                raise TimeoutError(f"LLM demorou mais de {self.timeout}s para responder.") from e
             if "connection" in error_msg or "connect" in error_msg:
-                raise ConnectionError(
-                    f"Não foi possível conectar ao LLM em {self.base_url}"
-                ) from e
+                raise ConnectionError(f"Não foi possível conectar ao LLM em {self.base_url}") from e
             raise
 
     def stream(self, system_prompt: str, user_message: str):
@@ -147,13 +146,9 @@ class LLMClient:
         except Exception as e:
             error_msg = str(e).lower()
             if "timeout" in error_msg or "timed out" in error_msg:
-                raise TimeoutError(
-                    f"LLM demorou mais de {self.timeout}s para responder durante streaming."
-                ) from e
+                raise TimeoutError(f"LLM demorou mais de {self.timeout}s para responder durante streaming.") from e
             if "connection" in error_msg or "connect" in error_msg:
-                raise ConnectionError(
-                    f"Não foi possível conectar ao LLM em {self.base_url}"
-                ) from e
+                raise ConnectionError(f"Não foi possível conectar ao LLM em {self.base_url}") from e
             raise
 
     def health_check(self) -> bool:
