@@ -327,9 +327,10 @@ def _execute_graphical_command(command: str, cwd: str, env: dict[str, str]) -> E
 
     env = _sanitize_graphical_env(env)
 
-    with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stdout_file, tempfile.TemporaryFile(
-        mode="w+", encoding="utf-8"
-    ) as stderr_file:
+    with (
+        tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stdout_file,
+        tempfile.TemporaryFile(mode="w+", encoding="utf-8") as stderr_file,
+    ):
         try:
             process = subprocess.Popen(
                 ["bash", "-lc", f"exec {command}"],

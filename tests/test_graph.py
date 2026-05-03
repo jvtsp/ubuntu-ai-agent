@@ -173,7 +173,7 @@ class TestAgentGraphTools:
         """Tool D-Bus read-only deve executar sem confirmação."""
         agent.llm.invoke.side_effect = [
             '```tool\n{"tool":"dbus_native","action":"service_status","args":{"service":"docker"}}\n```',
-            "SATISFATORIO"
+            "SATISFATORIO",
         ]
         agent.native_tool.run = MagicMock(
             return_value=NativeToolResult(
