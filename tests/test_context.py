@@ -38,7 +38,9 @@ class TestCollectSystemContext:
     @patch("src.system.context.shutil.which")
     def test_collects_terminal_context(self, mock_which):
         """Deve detectar emuladores de terminal disponíveis."""
-        mock_which.side_effect = lambda cmd: f"/usr/bin/{cmd}" if cmd in {"x-terminal-emulator", "gnome-terminal"} else None
+        mock_which.side_effect = lambda cmd: (
+            f"/usr/bin/{cmd}" if cmd in {"x-terminal-emulator", "gnome-terminal"} else None
+        )
         ctx = collect_system_context()
         assert ctx["terminal_command"] == "gnome-terminal"
         assert "gnome-terminal" in ctx["terminal_emulators"]

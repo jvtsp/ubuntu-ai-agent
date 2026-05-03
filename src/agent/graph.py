@@ -453,7 +453,11 @@ class AgentGraph:
                 "ui_status": "blocked",
             }
 
-        return {"tool_needs_confirmation": False if self.unsafe_mode else not self.native_tool.is_read_only(tool_call.action)}
+        return {
+            "tool_needs_confirmation": False
+            if self.unsafe_mode
+            else not self.native_tool.is_read_only(tool_call.action)
+        }
 
     def _preparar_tool_confirmacao(self, state: AgentState) -> dict:
         """Prepara confirmação para tool nativa mutável."""
@@ -839,7 +843,9 @@ class AgentGraph:
             )
             log.info("Executando confirmado (tentativa %d): %s", retry_count + 1, command)
 
-            result = execute_command(command, timeout=self.command_timeout, vault=self.vault, allow_unsafe=self.unsafe_mode)
+            result = execute_command(
+                command, timeout=self.command_timeout, vault=self.vault, allow_unsafe=self.unsafe_mode
+            )
             state["user_confirmed"] = True
             state["execution_result"] = result
 
